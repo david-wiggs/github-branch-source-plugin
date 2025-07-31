@@ -213,10 +213,12 @@ public class Connector {
                     GitHub connector = Connector.connect(apiUri, credentials);
                     try {
                         try {
-                            boolean githubAppAuthentication = credentials instanceof GitHubAppCredentials;
+                            boolean githubAppAuthentication = credentials instanceof GitHubAppCredentials 
+                                    || credentials instanceof GitHubEnterpriseAppCredentials;
                             if (githubAppAuthentication) {
                                 int remaining = connector.getRateLimit().getRemaining();
-                                return FormValidation.ok("GHApp verified, remaining rate limit: %d", remaining);
+                                String appType = credentials instanceof GitHubAppCredentials ? "GHApp" : "GHEnterpriseApp";
+                                return FormValidation.ok("%s verified, remaining rate limit: %d", appType, remaining);
                             }
 
                             return FormValidation.ok(
@@ -310,6 +312,7 @@ public class Connector {
         if (c instanceof GitHubAppCredentials && repoOwner != null) {
             c = ((GitHubAppCredentials) c).withOwner(repoOwner);
         }
+        // GitHubEnterpriseAppCredentials don't require owner modification as they work at the server level
         return c;
     }
 
@@ -357,6 +360,7 @@ public class Connector {
         final String hash;
         final String authHash;
         final GitHubAppCredentials gitHubAppCredentials;
+        final GitHubEnterpriseAppCredentials gitHubEnterpriseAppCredentials;
         final Jenkins jenkins = Jenkins.get();
         if (credentials == null) {
             username = null;
@@ -364,9 +368,11 @@ public class Connector {
             hash = "anonymous";
             authHash = "anonymous";
             gitHubAppCredentials = null;
+            gitHubEnterpriseAppCredentials = null;
         } else if (credentials instanceof GitHubAppCredentials) {
             password = null;
             gitHubAppCredentials = (GitHubAppCredentials) credentials;
+            gitHubEnterpriseAppCredentials = null;
             hash = Util.getDigestOf(gitHubAppCredentials.getAppID()
                     + gitHubAppCredentials.getOwner()
                     + gitHubAppCredentials.getPrivateKey().getPlainText()
@@ -379,6 +385,22 @@ public class Connector {
                     + "::"
                     + jenkins.getLegacyInstanceId());
             username = gitHubAppCredentials.getUsername();
+        } else if (credentials instanceof GitHubEnterpriseAppCredentials) {
+            password = null;
+            gitHubAppCredentials = null;
+            gitHubEnterpriseAppCredentials = (GitHubEnterpriseAppCredentials) credentials;
+            hash = Util.getDigestOf(gitHubEnterpriseAppCredentials.getAppID()
+                    + gitHubEnterpriseAppCredentials.getApiUri()
+                    + gitHubEnterpriseAppCredentials.getPrivateKey().getPlainText()
+                    + SALT); // want to ensure pooling by credential
+            authHash = Util.getDigestOf(gitHubEnterpriseAppCredentials.getAppID()
+                    + "::"
+                    + gitHubEnterpriseAppCredentials.getApiUri()
+                    + "::"
+                    + gitHubEnterpriseAppCredentials.getPrivateKey().getPlainText()
+                    + "::"
+                    + jenkins.getLegacyInstanceId());
+            username = gitHubEnterpriseAppCredentials.getUsername();
         } else if (credentials instanceof StandardUsernamePasswordCredentials) {
             StandardUsernamePasswordCredentials c = (StandardUsernamePasswordCredentials) credentials;
             username = c.getUsername();
@@ -386,6 +408,7 @@ public class Connector {
             hash = Util.getDigestOf(password + SALT); // want to ensure pooling by credential
             authHash = Util.getDigestOf(password + "::" + jenkins.getLegacyInstanceId());
             gitHubAppCredentials = null;
+            gitHubEnterpriseAppCredentials = null;
         } else {
             // TODO OAuth support
             throw new IOException(
@@ -402,6 +425,8 @@ public class Connector {
 
                 if (gitHubAppCredentials != null) {
                     gb.withAuthorizationProvider(gitHubAppCredentials.getAuthorizationProvider());
+                } else if (gitHubEnterpriseAppCredentials != null) {
+                    gb.withAuthorizationProvider(gitHubEnterpriseAppCredentials.getAuthorizationProvider());
                 } else if (username != null && password != null) {
                     // At the time of this change this works for OAuth tokens as well.
                     // This may not continue to work in the future, as GitHub has deprecated
@@ -410,7 +435,8 @@ public class Connector {
                     gb.withAuthorizationProvider(
                             ImmutableAuthorizationProvider.fromLoginAndPassword(username, password));
                 }
-                return new GitHubConnection(gb.build(), cache, credentials instanceof GitHubAppCredentials);
+                return new GitHubConnection(gb.build(), cache, 
+                    credentials instanceof GitHubAppCredentials || credentials instanceof GitHubEnterpriseAppCredentials);
             } catch (IOException e) {
                 throw new RuntimeException(e.getMessage(), e);
             }
@@ -507,7 +533,11 @@ public class Connector {
 
     private static CredentialsMatcher githubScanCredentialsMatcher() {
         // TODO OAuth credentials
-        return CredentialsMatchers.anyOf(CredentialsMatchers.instanceOf(StandardUsernamePasswordCredentials.class));
+        return CredentialsMatchers.anyOf(
+                CredentialsMatchers.instanceOf(StandardUsernamePasswordCredentials.class),
+                CredentialsMatchers.instanceOf(GitHubAppCredentials.class),
+                CredentialsMatchers.instanceOf(GitHubEnterpriseAppCredentials.class)
+        );
     }
 
     static List<DomainRequirement> githubDomainRequirements(String apiUri) {
