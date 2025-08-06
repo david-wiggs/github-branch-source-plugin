@@ -147,6 +147,7 @@ import org.kohsuke.stapler.DataBoundSetter;
 import org.kohsuke.stapler.QueryParameter;
 import org.kohsuke.stapler.export.Exported;
 import org.kohsuke.stapler.interceptor.RequirePOST;
+import org.kohsuke.stapler.verb.POST;
 
 public class GitHubSCMSource extends AbstractGitSCMSource {
 
@@ -2005,6 +2006,27 @@ public class GitHubSCMSource extends AbstractGitSCMSource {
         }
     }
 
+    /**
+     * Simple result class for namespace validation.
+     */
+    private static class NamespaceValidationResult {
+        private final boolean valid;
+        private final String message;
+
+        public NamespaceValidationResult(boolean valid, String message) {
+            this.valid = valid;
+            this.message = message;
+        }
+
+        public boolean isValid() {
+            return valid;
+        }
+
+        public String getMessage() {
+            return message;
+        }
+    }
+
     @Symbol("github")
     @Extension
     public static class DescriptorImpl extends SCMSourceDescriptor implements CustomDescribableModel {
@@ -2111,7 +2133,46 @@ public class GitHubSCMSource extends AbstractGitSCMSource {
             }
         }
 
-        @RequirePOST
+        /**
+         * Form validation method for repository URL following Jenkins conventions
+         */
+        @Restricted(NoExternalUse.class)
+        public FormValidation doCheckRepositoryUrl(
+                @QueryParameter String value,
+                @CheckForNull @AncestorInPath Item context) {
+            
+            if (context == null && !Jenkins.get().hasPermission(Jenkins.MANAGE)
+                    || context != null && !context.hasPermission(Item.EXTENDED_READ)) {
+                return FormValidation.error("Unable to validate repository information");
+            }
+
+            if (StringUtils.isBlank(value)) {
+                return FormValidation.ok(); // Empty is OK, don't show error until user types something
+            }
+
+            // Basic URL validation
+            GitHubRepositoryInfo info;
+            try {
+                info = GitHubRepositoryInfo.forRepositoryUrl(value);
+            } catch (IllegalArgumentException e) {
+                return FormValidation.error(e.getMessage());
+            }
+
+            // Namespace validation
+            if (context != null) {
+                NamespaceValidationResult namespaceResult = 
+                        validateNamespaceMatch(context.getFullName(), info.getRepository());
+                if (!namespaceResult.isValid()) {
+                    return FormValidation.error(
+                        "❌ Repository namespace mismatch: " + namespaceResult.getMessage() + 
+                        ". Please ensure the repository name follows the pattern pr####-ap####-<name> to match the workspace product and application IDs.");
+                }
+            }
+            
+            return FormValidation.ok("✓ Repository namespace matches workspace structure.");
+        }
+
+        @POST
         @Restricted(NoExternalUse.class)
         public FormValidation doValidateRepositoryUrlAndCredentials(
                 @CheckForNull @AncestorInPath Item context,
@@ -2135,20 +2196,33 @@ public class GitHubSCMSource extends AbstractGitSCMSource {
             } catch (IllegalArgumentException e) {
                 return FormValidation.error(e, e.getMessage());
             }
+
+            // Perform namespace validation and return error if it fails
+            if (context != null) {
+                NamespaceValidationResult namespaceResult =
+                        validateNamespaceMatch(context.getFullName(), info.getRepository());
+                if (!namespaceResult.isValid()) {
+                    return FormValidation.error(
+                        "❌ Repository namespace mismatch: " + namespaceResult.getMessage() +
+                        ". Please ensure the repository name follows the pattern pr####-ap####-<name> to match the workspace product and application IDs.");
+                }
+            }
+
             final String repoOwnerOrDefault = StringUtils.isBlank(repoOwner) ? info.getRepoOwner() : repoOwner;
             StandardCredentials credentials =
                     Connector.lookupScanCredentials(context, info.getApiUri(), credentialsId, repoOwnerOrDefault);
             StringBuilder sb = new StringBuilder();
+
             try {
                 GitHub github = Connector.connect(info.getApiUri(), credentials);
                 try {
                     if (github.isCredentialValid()) {
-                        sb.append("Credentials ok.");
+                        sb.append("Credentials ok. ");
                     }
 
                     GHRepository repo = github.getRepository(info.getRepoOwner() + "/" + info.getRepository());
                     if (repo != null) {
-                        sb.append(" Connected to ");
+                        sb.append("Connected to ");
                         sb.append(repo.getHtmlUrl());
                         sb.append(".");
                     }
@@ -2156,9 +2230,10 @@ public class GitHubSCMSource extends AbstractGitSCMSource {
                     Connector.release(github);
                 }
             } catch (Exception e) {
-                return FormValidation.error(e, "Error validating repository information. " + sb.toString());
+                return FormValidation.error(e, "Error validating repository information: " + e.getMessage());
             }
-            return FormValidation.ok(sb.toString());
+
+            return FormValidation.ok("✓ Repository validated successfully. " + sb.toString());
         }
 
         @Restricted(NoExternalUse.class)
@@ -2178,6 +2253,106 @@ public class GitHubSCMSource extends AbstractGitSCMSource {
                 @QueryParameter String repoOwner,
                 @QueryParameter boolean configuredByUrl) {
             return doCheckCredentialsId(context, apiUri, scanCredentialsId, repoOwner, configuredByUrl);
+        }
+
+        /**
+         * Silent validation method for repository URL that only checks namespace validity
+         * without returning error messages. Used for real-time form validation.
+         *
+         * @param context the Jenkins item context to get the folder path
+         * @param repositoryUrl the GitHub repository URL to validate
+         * @return FormValidation.ok() if valid, FormValidation.error() with special marker if invalid
+         */
+        @RequirePOST
+        @Restricted(NoExternalUse.class)
+        public FormValidation doCheckRepositoryUrlSilent(
+                @CheckForNull @AncestorInPath Item context, @QueryParameter String repositoryUrl) {
+
+            if (repositoryUrl == null || repositoryUrl.trim().isEmpty()) {
+                return FormValidation.ok(); // Don't block for empty URL
+            }
+
+            try {
+                GitHubRepositoryInfo info = GitHubRepositoryInfo.forRepositoryUrl(repositoryUrl);
+                
+                // Perform namespace validation if context is available
+                if (context != null) {
+                    String repoName = info.getRepository();
+                    String itemPath = context.getFullName();
+                    
+                    NamespaceValidationResult validationResult = validateNamespaceMatch(itemPath, repoName);
+                    
+                    if (!validationResult.isValid()) {
+                        // Return error with special marker for JavaScript to detect
+                        return FormValidation.error("NAMESPACE_MISMATCH");
+                    }
+                }
+                
+                return FormValidation.ok();
+                
+            } catch (IllegalArgumentException e) {
+                return FormValidation.ok(); // Don't block for URL format issues - let main validation handle
+            }
+        }
+
+        /**
+         * Validates that the repository name matches the expected pattern based on the namespace path.
+         *
+         * @param itemPath the full path of the Jenkins item (e.g., "/main/pr12345/ap12345/my-pipeline")
+         * @param repoName the repository name from the GitHub URL
+         * @return validation result with details
+         */
+        private NamespaceValidationResult validateNamespaceMatch(String itemPath, String repoName) {
+            // Parse the item path to extract namespace components
+            String[] pathParts = itemPath.split("/");
+
+            // Look for pr and ap patterns in the path
+            String productLineId = null;
+            String applicationId = null;
+
+            Pattern prPattern = Pattern.compile("^pr(\\d+)$", Pattern.CASE_INSENSITIVE);
+            Pattern apPattern = Pattern.compile("^ap(\\d+)$", Pattern.CASE_INSENSITIVE);
+
+            for (String part : pathParts) {
+                if (part.isEmpty()) continue;
+
+                Matcher prMatcher = prPattern.matcher(part);
+                if (prMatcher.matches()) {
+                    productLineId = prMatcher.group(1);
+                }
+
+                Matcher apMatcher = apPattern.matcher(part);
+                if (apMatcher.matches()) {
+                    applicationId = apMatcher.group(1);
+                }
+            }
+
+            // If no pr/ap patterns found, skip validation
+            if (productLineId == null && applicationId == null) {
+                return new NamespaceValidationResult(true, "No namespace pattern detected, validation skipped");
+            }
+
+            // Build expected repository name pattern
+            StringBuilder expectedPattern = new StringBuilder();
+            if (productLineId != null) {
+                expectedPattern.append("pr").append(productLineId);
+            }
+            if (applicationId != null) {
+                if (expectedPattern.length() > 0) {
+                    expectedPattern.append("-");
+                }
+                expectedPattern.append("ap").append(applicationId);
+            }
+
+            // Check if repository name contains the expected pattern
+            String expectedPrefix = expectedPattern.toString();
+            boolean matches = repoName.toLowerCase().contains(expectedPrefix.toLowerCase());
+
+            String message = String.format(
+                    "Expected repository to contain '%s' (from path: %s), found repository: %s",
+                    expectedPrefix, itemPath, repoName);
+
+            return new NamespaceValidationResult(matches, message);
         }
 
         @Restricted(NoExternalUse.class)

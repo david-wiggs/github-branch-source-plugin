@@ -1,7 +1,9 @@
 <?jelly escape-by-default='true'?>
 <j:jelly xmlns:j="jelly:core" xmlns:c="/lib/credentials"
          xmlns:f="/lib/form"
-         xmlns:scm="/jenkins/scm/api/form">
+         xmlns:scm="/jenkins/scm/api/form"
+         xmlns:st="jelly:stapler">
+  <st:adjunct includes="org.jenkinsci.plugins.github_branch_source.GitHubSCMSource.github-scm-source"/>
   <f:entry title="${%Credentials}" field="credentialsId">
     <c:select checkMethod="post"/>
   </f:entry>
@@ -15,9 +17,9 @@
   <f:radioBlock name="configuredByUrlRadio" value="true" checked="true" title="${%Repository HTTPS URL}" inline="true">
     <f:nested>
       <f:entry title="${%Repository HTTPS URL}" field="repositoryUrl">
-        <f:textbox/>
+        <f:textbox checkDependsOn="" />
       </f:entry>
-      <f:validateButton method="validateRepositoryUrlAndCredentials" title="${%Validate}" with="repositoryUrl,credentialsId"/>
+      <f:validateButton id="github-validate-button" method="validateRepositoryUrlAndCredentials" title="${%Validate}" with="repositoryUrl,credentialsId" checkMethod="post"/>
     </f:nested>
   </f:radioBlock>
   <f:radioBlock name="configuredByUrlRadio" value="false" checked="false" title="${%Repository Scan - Deprecated Visualization}" inline="true">
@@ -38,7 +40,6 @@
     </f:nested>
   </f:radioBlock>
 
-  <script type="text/javascript" src="${rootURL}/plugin/github-branch-source/github-scm-source.js"/>
   <f:block>
     <br/>
     <br/>

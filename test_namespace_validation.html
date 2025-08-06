@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Namespace Validation</title>
+    <script>
+        function testValidation() {
+            // Test the namespace validation logic
+            function extractNamespacesFromURL(url) {
+                try {
+                    const match = url.match(/https:\/\/github\.com\/([^\/]+)\/([^\/]+)/);
+                    if (!match) return null;
+                    
+                    const [, owner, repo] = match;
+                    
+                    // Look for pr#### pattern
+                    const prMatch = owner.match(/pr(\d+)/i) || repo.match(/pr(\d+)/i);
+                    const prNumber = prMatch ? prMatch[1] : null;
+                    
+                    // Look for ap#### pattern  
+                    const apMatch = owner.match(/ap(\d+)/i) || repo.match(/ap(\d+)/i);
+                    const apNumber = apMatch ? apMatch[1] : null;
+                    
+                    return { prNumber, apNumber };
+                } catch (e) {
+                    return null;
+                }
+            }
+
+            function validateNamespaceMatch(repositoryUrl, folderPath) {
+                const urlNamespaces = extractNamespacesFromURL(repositoryUrl);
+                if (!urlNamespaces || !urlNamespaces.prNumber || !urlNamespaces.apNumber) {
+                    return { isValid: false, error: "Repository URL must contain both pr#### and ap#### patterns" };
+                }
+                
+                const expectedPrPattern = `pr${urlNamespaces.prNumber}`;
+                const expectedApPattern = `ap${urlNamespaces.apNumber}`;
+                
+                if (!folderPath.includes(expectedPrPattern)) {
+                    return { isValid: false, error: `Folder path should contain ${expectedPrPattern}` };
+                }
+                
+                if (!folderPath.includes(expectedApPattern)) {
+                    return { isValid: false, error: `Folder path should contain ${expectedApPattern}` };
+                }
+                
+                return { isValid: true };
+            }
+
+            // Test cases
+            const testCases = [
+                {
+                    url: "https://github.com/user/pr12345-ap67890-repo",
+                    folderPath: "/jenkins/job/fmr/job/pr12345/job/ap67890/job/pipeline",
+                    expected: true
+                },
+                {
+                    url: "https://github.com/pr99999/ap11111-repo",
+                    folderPath: "/jenkins/job/fmr/job/pr99999/job/ap11111/job/pipeline",
+                    expected: true
+                },
+                {
+                    url: "https://github.com/user/pr12345-ap67890-repo",
+                    folderPath: "/jenkins/job/fmr/job/pr54321/job/ap67890/job/pipeline",
+                    expected: false
+                },
+                {
+                    url: "https://github.com/user/invalid-repo",
+                    folderPath: "/jenkins/job/fmr/job/pr12345/job/ap67890/job/pipeline",
+                    expected: false
+                }
+            ];
+
+            console.log("Testing namespace validation logic:");
+            
+            testCases.forEach((testCase, index) => {
+                const result = validateNamespaceMatch(testCase.url, testCase.folderPath);
+                const passed = result.isValid === testCase.expected;
+                
+                console.log(`Test ${index + 1}: ${passed ? 'PASS' : 'FAIL'}`);
+                console.log(`  URL: ${testCase.url}`);
+                console.log(`  Folder: ${testCase.folderPath}`);
+                console.log(`  Expected: ${testCase.expected}, Got: ${result.isValid}`);
+                if (!result.isValid) {
+                    console.log(`  Error: ${result.error}`);
+                }
+                console.log('');
+            });
+        }
+
+        // Run tests when page loads
+        window.onload = testValidation;
+    </script>
+</head>
+<body>
+    <h1>Namespace Validation Test</h1>
+    <p>Check the browser console for test results.</p>
+    <p>The namespace validation system should:</p>
+    <ul>
+        <li>Extract pr#### and ap#### patterns from GitHub repository URLs</li>
+        <li>Validate that these patterns match the Jenkins folder structure</li>
+        <li>Disable Save/Apply buttons when validation fails</li>
+        <li>Remove formnovalidate attributes to enforce form validation</li>
+    </ul>
+</body>
+</html>
