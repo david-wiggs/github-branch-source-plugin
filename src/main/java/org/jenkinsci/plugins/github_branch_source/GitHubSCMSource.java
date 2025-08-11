@@ -2138,9 +2138,8 @@ public class GitHubSCMSource extends AbstractGitSCMSource {
          */
         @Restricted(NoExternalUse.class)
         public FormValidation doCheckRepositoryUrl(
-                @QueryParameter String value,
-                @CheckForNull @AncestorInPath Item context) {
-            
+                @QueryParameter String value, @CheckForNull @AncestorInPath Item context) {
+
             if (context == null && !Jenkins.get().hasPermission(Jenkins.MANAGE)
                     || context != null && !context.hasPermission(Item.EXTENDED_READ)) {
                 return FormValidation.error("Unable to validate repository information");
@@ -2160,15 +2159,15 @@ public class GitHubSCMSource extends AbstractGitSCMSource {
 
             // Namespace validation
             if (context != null) {
-                NamespaceValidationResult namespaceResult = 
+                NamespaceValidationResult namespaceResult =
                         validateNamespaceMatch(context.getFullName(), info.getRepository());
                 if (!namespaceResult.isValid()) {
                     return FormValidation.error(
-                        "❌ Repository namespace mismatch: " + namespaceResult.getMessage() + 
-                        ". Please ensure the repository name follows the pattern pr####-ap####-<name> to match the workspace product and application IDs.");
+                            "❌ Repository namespace mismatch: " + namespaceResult.getMessage()
+                                    + ". Please ensure the repository name follows the pattern pr####-ap####-<name> to match the workspace product and application IDs.");
                 }
             }
-            
+
             return FormValidation.ok("✓ Repository namespace matches workspace structure.");
         }
 
@@ -2203,8 +2202,8 @@ public class GitHubSCMSource extends AbstractGitSCMSource {
                         validateNamespaceMatch(context.getFullName(), info.getRepository());
                 if (!namespaceResult.isValid()) {
                     return FormValidation.error(
-                        "❌ Repository namespace mismatch: " + namespaceResult.getMessage() +
-                        ". Please ensure the repository name follows the pattern pr####-ap####-<name> to match the workspace product and application IDs.");
+                            "❌ Repository namespace mismatch: " + namespaceResult.getMessage()
+                                    + ". Please ensure the repository name follows the pattern pr####-ap####-<name> to match the workspace product and application IDs.");
                 }
             }
 
@@ -2274,22 +2273,22 @@ public class GitHubSCMSource extends AbstractGitSCMSource {
 
             try {
                 GitHubRepositoryInfo info = GitHubRepositoryInfo.forRepositoryUrl(repositoryUrl);
-                
+
                 // Perform namespace validation if context is available
                 if (context != null) {
                     String repoName = info.getRepository();
                     String itemPath = context.getFullName();
-                    
+
                     NamespaceValidationResult validationResult = validateNamespaceMatch(itemPath, repoName);
-                    
+
                     if (!validationResult.isValid()) {
                         // Return error with special marker for JavaScript to detect
                         return FormValidation.error("NAMESPACE_MISMATCH");
                     }
                 }
-                
+
                 return FormValidation.ok();
-                
+
             } catch (IllegalArgumentException e) {
                 return FormValidation.ok(); // Don't block for URL format issues - let main validation handle
             }

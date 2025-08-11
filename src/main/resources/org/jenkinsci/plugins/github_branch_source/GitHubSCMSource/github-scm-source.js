@@ -1,4 +1,10 @@
-document.addEventListener("DOMContentLoaded", function() {
+// Support both normal page load and dynamic late injection (new source panel after initial load)
+(function(init){
+    if (window.__githubScmSourceAdjunctInit) return;
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function(){ if(!window.__githubScmSourceAdjunctInit){ window.__githubScmSourceAdjunctInit=true; init(); }});
+    } else { window.__githubScmSourceAdjunctInit=true; init(); }
+})(function(){
     // Function to find buttons using multiple possible selectors
     function findButton(type) {
         const selectors = {
@@ -39,14 +45,17 @@ document.addEventListener("DOMContentLoaded", function() {
     const CHECK_ENDPOINT = (window.Jenkins && (window.Jenkins.rootURL || window.Jenkins.projectConfigPageRoot) ? window.Jenkins.rootURL : window.rootURL || '') +
         '/descriptorByName/org.jenkinsci.plugins.github_branch_source.GitHubSCMSource/checkRepositoryUrl?value=';
 
-    function findRepoUrlInput() {
-        return document.querySelector("input[name='repositoryUrl']") ||
-               document.querySelector("input[name='_.repositoryUrl']") ||
-               document.querySelector("input[id$='repositoryUrl']");
+    function findRepoUrlInputs() {
+        return Array.from(document.querySelectorAll("input[name='repositoryUrl'],input[name$='repositoryUrl'],input[name*='repositoryUrl'],input[id$='repositoryUrl'],input[id*='repositoryUrl']"));
     }
-
-    let repoUrlDebounceTimer = null;
-    let lastCheckedValue = null;
+    function findRepoUrlInput(){return findRepoUrlInputs()[0]||null;}
+    function schedulePreValidationForInput(input, force=false) {
+        const value = input.value;
+        if (!force && input.dataset.lastNamespaceChecked === value) return;
+        input.dataset.lastNamespaceChecked = value;
+        if (input._debounceTimer) clearTimeout(input._debounceTimer);
+        input._debounceTimer = setTimeout(() => preValidateNamespace(value, force), 400);
+    }
 
     function ensureSingleNamespaceError() {
         const all = Array.from(document.querySelectorAll('.error, .validation-error-area'))
@@ -84,8 +93,6 @@ document.addEventListener("DOMContentLoaded", function() {
     }
 
     async function preValidateNamespace(value, force = false) {
-        if (!force && value === lastCheckedValue) return;
-        lastCheckedValue = value;
         if (!value || !value.trim()) {
             removeNamespaceError();
             updateButtonStates();
@@ -103,14 +110,53 @@ document.addEventListener("DOMContentLoaded", function() {
                 const msg = errNode ? errNode.textContent.trim() : (NAMESPACE_MISMATCH_TOKEN + ' (validation)');
                 insertOrUpdateNamespaceError(msg);
             } else {
-                removeNamespaceError();
+                if (!clientNamespaceMatches(value)) {
+                    insertOrUpdateNamespaceError(buildClientNamespaceMessage(value));
+                } else {
+                    removeNamespaceError();
+                }
             }
         } catch (e) {
             console.log('Namespace pre-validation fetch failed (non-fatal):', e.message);
+            if (value && !clientNamespaceMatches(value)) {
+                insertOrUpdateNamespaceError(buildClientNamespaceMessage(value));
+            }
         } finally {
             ensureSingleNamespaceError();
             updateButtonStates();
         }
+    }
+
+    function extractFolderNamespace() {
+        const crumbs = Array.from(document.querySelectorAll('#breadcrumbs li a, #breadcrumbs a')).map(a => a.textContent.trim());
+        let pr = null, ap = null;
+        crumbs.forEach(txt => {
+            if (!pr) { const m1 = txt.match(/^pr(\d{3,})$/); if (m1) pr = 'pr' + m1[1]; }
+            if (!ap) { const m2 = txt.match(/^ap(\d{3,})$/); if (m2) ap = 'ap' + m2[1]; }
+        });
+        return { pr, ap };
+    }
+    function parseRepositoryName(repoUrl) {
+        if (!repoUrl) return '';
+        let name = repoUrl.trim();
+        const sshMatch = name.match(/^[^:]+:(?:[^/]+)\/([^\s]+)$/);
+        const httpsMatch = name.match(/https?:\/\/[^/]+\/(?:[^/]+)\/([^\s]+)$/);
+        if (sshMatch) name = sshMatch[1]; else if (httpsMatch) name = httpsMatch[1];
+        name = name.replace(/\.git$/,'');
+        return name.split('/').pop();
+    }
+    function clientNamespaceMatches(repoUrl) {
+        const { pr, ap } = extractFolderNamespace();
+        if (!pr || !ap) return true;
+        const repo = parseRepositoryName(repoUrl);
+        if (!repo) return true;
+        const expectedPrefix = pr + '-' + ap + '-';
+        return repo.startsWith(expectedPrefix);
+    }
+    function buildClientNamespaceMessage(repoUrl) {
+        const { pr, ap } = extractFolderNamespace();
+        if (!pr || !ap) return NAMESPACE_MISMATCH_TOKEN + ': Unable to infer folder namespace context.';
+        return '❌ ' + NAMESPACE_MISMATCH_TOKEN + ': Expected repository to start with "' + pr + '-' + ap + '-" (derived from folder path).';
     }
 
     function schedulePreValidation(value) {
@@ -118,30 +164,19 @@ document.addEventListener("DOMContentLoaded", function() {
         repoUrlDebounceTimer = setTimeout(() => preValidateNamespace(value), 400);
     }
 
-    function hookRepoUrlInput() {
-        const input = findRepoUrlInput();
-        if (!input) {
-            console.log('Repository URL input not yet found for pre-validation');
-            return false;
-        }
-        if (input._namespaceHooked) return true;
-        input._namespaceHooked = true;
-        input.addEventListener('input', e => schedulePreValidation(e.target.value));
-        input.addEventListener('blur', e => preValidateNamespace(e.target.value));
-        schedulePreValidation(input.value || '');
-        console.log('Repository URL input hooked for namespace pre-validation');
-        return true;
+    function hookAllRepoUrlInputs() {
+        const inputs = findRepoUrlInputs();
+        inputs.forEach(input => {
+            if (input._namespaceHooked) return;
+            input._namespaceHooked = true;
+            input.addEventListener('input', e => schedulePreValidationForInput(e.target));
+            input.addEventListener('blur', e => preValidateNamespace(e.target.value));
+            schedulePreValidationForInput(input, true);
+            console.log('[namespace-validation] Hooked repositoryUrl input:', input.name || input.id);
+        });
     }
-
-    if (!hookRepoUrlInput()) {
-        let attempts = 0;
-        const retryTimer = setInterval(() => {
-            attempts++;
-            if (hookRepoUrlInput() || attempts > 20) {
-                clearInterval(retryTimer);
-            }
-        }, 500);
-    }
+    hookAllRepoUrlInputs();
+    [300,800,1500].forEach(d=>setTimeout(hookAllRepoUrlInputs,d));
     // === End namespace pre-validation additions ===
     
     function dedupeNamespaceErrors() {
@@ -230,22 +265,15 @@ document.addEventListener("DOMContentLoaded", function() {
     
     // Monitor for changes in validation state
     const observer = new MutationObserver(function(mutations) {
-        let should = false;
+        let should = false; let newRepo=false;
         mutations.forEach(m => {
             if (m.type === 'childList') {
-                m.addedNodes.forEach(n => {
-                    if (n.nodeType === 1) {
-                        const el = n;
-                        if (el.matches && (el.matches('button.jenkins-apply-button') || el.matches('button.jenkins-submit-button'))) should = true;
-                        if (el.querySelector && el.querySelector('button.jenkins-apply-button, button.jenkins-submit-button')) should = true;
-                        if (el.classList && (el.classList.contains('error') || el.classList.contains('validation-error-area'))) should = true;
-                    }
-                });
-            } else if (m.type === 'attributes') {
-                const t = m.target;
-                if (t.classList && (t.classList.contains('error') || t.classList.contains('validation-error-area') || t.classList.contains('validation-ok'))) should = true;
+                m.addedNodes.forEach(n => { if (n.nodeType===1){ const el=n; if (el.matches && (el.matches('button.jenkins-apply-button')||el.matches('button.jenkins-submit-button'))) should=true; if (el.querySelector && el.querySelector('button.jenkins-apply-button, button.jenkins-submit-button')) should=true; if (el.classList && (el.classList.contains('error')||el.classList.contains('validation-error-area'))) should=true; if (el.matches && el.matches("input[name*='repositoryUrl'],input[id*='repositoryUrl']")) newRepo=true; if(!newRepo && el.querySelector && el.querySelector("input[name*='repositoryUrl'],input[id*='repositoryUrl']")) newRepo=true; }});
+            } else if (m.type==='attributes') {
+                const t=m.target; if (t.classList && (t.classList.contains('error')||t.classList.contains('validation-error-area')||t.classList.contains('validation-ok'))) should=true;
             }
         });
+        if(newRepo){ hookAllRepoUrlInputs(); should=true; }
         if (should) updateButtonStates();
     });
     
@@ -289,6 +317,10 @@ document.addEventListener("DOMContentLoaded", function() {
             const input = findRepoUrlInput();
             if (input) preValidateNamespace(input.value, true);
             [400, 900, 1600].forEach(d => setTimeout(updateButtonStates, d));
+        }
+        if (target.closest && target.closest('.jenkins-dropdown')) {
+            console.log('[namespace-validation] Dropdown selection clicked; scheduling repositoryUrl re-hook');
+            [50,200,600].forEach(d=>setTimeout(()=>{hookAllRepoUrlInputs(); updateButtonStates();},d));
         }
     });
     
