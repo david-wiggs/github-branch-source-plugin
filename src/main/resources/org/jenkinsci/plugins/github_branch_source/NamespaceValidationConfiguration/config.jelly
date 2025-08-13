@@ -1,0 +1,28 @@
+<?jelly escape-by-default='true'?>
+<j:jelly xmlns:j='jelly:core' xmlns:f='/lib/form'>
+  <f:section title='GitHub Namespace Validation'>
+    <f:entry title='Enable namespace validation' field='enabled'>
+      <f:checkbox/>
+    </f:entry>
+    <f:entry title='Folder PR segment regex' field='prSegmentRegex' help='Regex to detect PR token from folder path (e.g., ^pr\\d+$)'>
+      <f:textbox/>
+    </f:entry>
+    <f:entry title='Folder AP segment regex' field='apSegmentRegex' help='Regex to detect AP token from folder path (e.g., ^ap\\d+$)'>
+      <f:textbox/>
+    </f:entry>
+    <f:entry title='Expected prefix template' field='expectedPrefixTemplate' help='Use {pr} and {ap} placeholders, e.g., {pr}-{ap}-'>
+      <f:textbox/>
+    </f:entry>
+    <f:entry title='Require both tokens' field='requireBothTokens' help='If enabled, enforce only when both PR and AP appear in the folder path.'>
+      <f:checkbox/>
+    </f:entry>
+    <f:entry title='Match mode' help='Prefix means repo must start with the template; otherwise we check if it contains it.'>
+      <f:optionalBlock name='usePrefixMatch' checked='${it.usePrefixMatch}' title='Use prefix match'>
+        <f:nested/>
+      </f:optionalBlock>
+    </f:entry>
+    <f:entry title='Case insensitive' field='caseInsensitive'>
+      <f:checkbox/>
+    </f:entry>
+  </f:section>
+</j:jelly>

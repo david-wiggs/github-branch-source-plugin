@@ -2294,6 +2294,21 @@ public class GitHubSCMSource extends AbstractGitSCMSource {
             }
         }
 
+        @Restricted(NoExternalUse.class)
+        public net.sf.json.JSONObject doGetNamespaceValidationConfig() {
+            NamespaceValidationConfiguration cfg = NamespaceValidationConfiguration.get();
+            net.sf.json.JSONObject o = new net.sf.json.JSONObject();
+            if (cfg == null) return o;
+            o.put("enabled", cfg.isEnabled());
+            o.put("prSegmentRegex", cfg.getPrSegmentRegex());
+            o.put("apSegmentRegex", cfg.getApSegmentRegex());
+            o.put("expectedPrefixTemplate", cfg.getExpectedPrefixTemplate());
+            o.put("usePrefixMatch", cfg.isUsePrefixMatch());
+            o.put("caseInsensitive", cfg.isCaseInsensitive());
+            o.put("requireBothTokens", cfg.isRequireBothTokens());
+            return o;
+        }
+
         /**
          * Validates that the repository name matches the expected pattern based on the namespace path.
          *
@@ -2302,56 +2317,40 @@ public class GitHubSCMSource extends AbstractGitSCMSource {
          * @return validation result with details
          */
         private NamespaceValidationResult validateNamespaceMatch(String itemPath, String repoName) {
-            // Parse the item path to extract namespace components
-            String[] pathParts = itemPath.split("/");
-
-            // Look for pr and ap patterns in the path
-            String productLineId = null;
-            String applicationId = null;
-
-            Pattern prPattern = Pattern.compile("^pr(\\d+)$", Pattern.CASE_INSENSITIVE);
-            Pattern apPattern = Pattern.compile("^ap(\\d+)$", Pattern.CASE_INSENSITIVE);
-
-            for (String part : pathParts) {
-                if (part.isEmpty()) continue;
-
-                Matcher prMatcher = prPattern.matcher(part);
-                if (prMatcher.matches()) {
-                    productLineId = prMatcher.group(1);
-                }
-
-                Matcher apMatcher = apPattern.matcher(part);
-                if (apMatcher.matches()) {
-                    applicationId = apMatcher.group(1);
-                }
+            NamespaceValidationConfiguration cfg = NamespaceValidationConfiguration.get();
+            if (cfg == null || !cfg.isEnabled()) {
+                return new NamespaceValidationResult(true, "Namespace validation disabled");
             }
-
-            // If no pr/ap patterns found, skip validation
-            if (productLineId == null && applicationId == null) {
+            String[] parts = itemPath.split("/");
+            Pattern prPat = Pattern.compile(cfg.getPrSegmentRegex(), cfg.isCaseInsensitive() ? Pattern.CASE_INSENSITIVE : 0);
+            Pattern apPat = Pattern.compile(cfg.getApSegmentRegex(), cfg.isCaseInsensitive() ? Pattern.CASE_INSENSITIVE : 0);
+            String prSeg = null, apSeg = null;
+            for (String part : parts) {
+                if (part == null || part.isEmpty()) continue;
+                if (prSeg == null && prPat.matcher(part).matches()) prSeg = part;
+                if (apSeg == null && apPat.matcher(part).matches()) apSeg = part;
+            }
+            if (cfg.isRequireBothTokens() && (prSeg == null || apSeg == null)) {
+                return new NamespaceValidationResult(true, "Insufficient namespace context; skipping enforcement");
+            }
+            if (prSeg == null && apSeg == null) {
                 return new NamespaceValidationResult(true, "No namespace pattern detected, validation skipped");
             }
-
-            // Build expected repository name pattern
-            StringBuilder expectedPattern = new StringBuilder();
-            if (productLineId != null) {
-                expectedPattern.append("pr").append(productLineId);
+            String expected = cfg.getExpectedPrefixTemplate()
+                    .replace("{pr}", prSeg == null ? "" : prSeg)
+                    .replace("{ap}", apSeg == null ? "" : apSeg);
+            String repo = repoName == null ? "" : repoName;
+            boolean matched;
+            if (cfg.isCaseInsensitive()) {
+                String r = repo.toLowerCase();
+                String e = expected.toLowerCase();
+                matched = cfg.isUsePrefixMatch() ? r.startsWith(e) : r.contains(e);
+            } else {
+                matched = cfg.isUsePrefixMatch() ? repo.startsWith(expected) : repo.contains(expected);
             }
-            if (applicationId != null) {
-                if (expectedPattern.length() > 0) {
-                    expectedPattern.append("-");
-                }
-                expectedPattern.append("ap").append(applicationId);
-            }
-
-            // Check if repository name contains the expected pattern
-            String expectedPrefix = expectedPattern.toString();
-            boolean matches = repoName.toLowerCase().contains(expectedPrefix.toLowerCase());
-
-            String message = String.format(
-                    "Expected repository to contain '%s' (from path: %s), found repository: %s",
-                    expectedPrefix, itemPath, repoName);
-
-            return new NamespaceValidationResult(matches, message);
+            String msg = String.format("Expected repository to %s '%s' (from path: %s), found repository: %s",
+                    cfg.isUsePrefixMatch() ? "start with" : "contain", expected, itemPath, repoName);
+            return new NamespaceValidationResult(matched, msg);
         }
 
         @Restricted(NoExternalUse.class)

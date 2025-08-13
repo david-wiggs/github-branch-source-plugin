@@ -50,8 +50,33 @@
     // 4. No duplicate namespace violation errors (reuse existing duplicate hiding logic)
 
     const NAMESPACE_MISMATCH_TOKEN = 'Repository namespace mismatch';
-    const CHECK_ENDPOINT = (window.Jenkins && (window.Jenkins.rootURL || window.Jenkins.projectConfigPageRoot) ? window.Jenkins.rootURL : window.rootURL || '') +
-        '/descriptorByName/org.jenkinsci.plugins.github_branch_source.GitHubSCMSource/checkRepositoryUrl?value=';
+    const ROOT_URL = (window.Jenkins && (window.Jenkins.rootURL || window.Jenkins.projectConfigPageRoot) ? window.Jenkins.rootURL : window.rootURL || '');
+    const CHECK_ENDPOINT = ROOT_URL + '/descriptorByName/org.jenkinsci.plugins.github_branch_source.GitHubSCMSource/checkRepositoryUrl?value=';
+    const CFG_ENDPOINT = ROOT_URL + '/descriptorByName/org.jenkinsci.plugins.github_branch_source.GitHubSCMSource/getNamespaceValidationConfig';
+    let NS_CFG = {
+        enabled: true,
+        prSegmentRegex: '^pr\\d+$',
+        apSegmentRegex: '^ap\\d+$',
+        expectedPrefixTemplate: '{pr}-{ap}-',
+        usePrefixMatch: true,
+        caseInsensitive: true,
+        requireBothTokens: false,
+        _loaded: false
+    };
+    async function loadNamespaceConfig() {
+        try {
+            const r = await fetch(CFG_ENDPOINT, { headers: { 'Accept': 'application/json' } });
+            if (r.ok) {
+                const j = await r.json();
+                NS_CFG = Object.assign(NS_CFG, j, { _loaded: true });
+                console.log('[namespace-validation] loaded config:', NS_CFG);
+            }
+        } catch(e) {
+            // ignore; fallback defaults apply
+        }
+    }
+    // fire-and-forget; consumers use NS_CFG synchronously with defaults if not yet loaded
+    loadNamespaceConfig();
 
     function findRepoUrlInputs() {
         return Array.from(document.querySelectorAll("input[name='repositoryUrl'],input[name$='repositoryUrl'],input[name*='repositoryUrl'],input[id$='repositoryUrl'],input[id*='repositoryUrl']"));
@@ -152,16 +177,13 @@
 
     // --- Client-side fallback namespace validation (no server context) ---
     function extractFolderNamespace() {
-        // Use breadcrumbs: collect pr#### and ap#### tokens in order.
         const crumbs = Array.from(document.querySelectorAll('#breadcrumbs li a, #breadcrumbs a')).map(a => a.textContent.trim());
         let pr = null, ap = null;
+        const prRe = new RegExp(NS_CFG.prSegmentRegex, NS_CFG.caseInsensitive ? 'i':'');
+        const apRe = new RegExp(NS_CFG.apSegmentRegex, NS_CFG.caseInsensitive ? 'i':'');
         crumbs.forEach(txt => {
-            if (!pr) {
-                const m1 = txt.match(/^pr(\d{3,})$/); if (m1) pr = 'pr' + m1[1];
-            }
-            if (!ap) {
-                const m2 = txt.match(/^ap(\d{3,})$/); if (m2) ap = 'ap' + m2[1];
-            }
+            if (!pr && prRe.test(txt)) pr = txt;
+            if (!ap && apRe.test(txt)) ap = txt;
         });
         return { pr, ap };
     }
@@ -177,18 +199,30 @@
         name = name.replace(/\.git$/,'');
         return name.split('/').pop();
     }
+    function buildExpectedFromTemplate(pr, ap) {
+        return NS_CFG.expectedPrefixTemplate.replace('{pr}', pr || '').replace('{ap}', ap || '');
+    }
     function clientNamespaceMatches(repoUrl) {
+        if (!NS_CFG.enabled) return true;
         const { pr, ap } = extractFolderNamespace();
-        if (!pr || !ap) return true; // can't evaluate, treat as pass to avoid false block
+        if (NS_CFG.requireBothTokens && (!pr || !ap)) return true; // skip enforcement if insufficient context
+        if (!pr && !ap) return true; // no context
         const repo = parseRepositoryName(repoUrl);
         if (!repo) return true;
-        const expectedPrefix = pr + '-' + ap + '-';
-        return repo.startsWith(expectedPrefix);
+        const expected = buildExpectedFromTemplate(pr, ap);
+        if (NS_CFG.caseInsensitive) {
+            const r = repo.toLowerCase();
+            const e = expected.toLowerCase();
+            return NS_CFG.usePrefixMatch ? r.startsWith(e) : r.includes(e);
+        }
+        return NS_CFG.usePrefixMatch ? repo.startsWith(expected) : repo.includes(expected);
     }
     function buildClientNamespaceMessage(repoUrl) {
+        if (!NS_CFG.enabled) return '';
         const { pr, ap } = extractFolderNamespace();
-        if (!pr || !ap) return NAMESPACE_MISMATCH_TOKEN + ': Unable to infer folder namespace context.';
-        return '❌ ' + NAMESPACE_MISMATCH_TOKEN + ': Expected repository to start with "' + pr + '-' + ap + '-" (derived from folder path).';
+        if (!pr && !ap) return NAMESPACE_MISMATCH_TOKEN + ': Unable to infer folder namespace context.';
+        const expected = buildExpectedFromTemplate(pr, ap);
+        return '❌ ' + NAMESPACE_MISMATCH_TOKEN + ': Expected repository to ' + (NS_CFG.usePrefixMatch ? 'start with' : 'contain') + ' "' + expected + '" (derived from folder path).';
     }
 
     function hookAllRepoUrlInputs() {
