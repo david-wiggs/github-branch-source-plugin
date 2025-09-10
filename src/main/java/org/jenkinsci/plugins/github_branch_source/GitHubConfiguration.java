@@ -28,6 +28,8 @@ import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.Extension;
 import hudson.security.Permission;
+import hudson.Util;
+import hudson.util.FormValidation;
 import hudson.util.ListBoxModel;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -42,6 +44,7 @@ import jenkins.model.GlobalConfiguration;
 import jenkins.model.Jenkins;
 import net.sf.json.JSONObject;
 import org.apache.commons.lang3.StringUtils;
+import org.kohsuke.stapler.QueryParameter;
 import org.kohsuke.stapler.StaplerRequest2;
 
 @Extension
@@ -54,6 +57,10 @@ public class GitHubConfiguration extends GlobalConfiguration {
     private List<Endpoint> endpoints;
 
     private ApiRateLimitChecker apiRateLimitChecker;
+    
+    private boolean passthroughAuthenticationEnabled = false;
+    
+    private String passthroughAuthenticationUrl;
 
     public GitHubConfiguration() {
         load();
@@ -80,6 +87,25 @@ public class GitHubConfiguration extends GlobalConfiguration {
 
     public synchronized void setApiRateLimitChecker(@CheckForNull ApiRateLimitChecker apiRateLimitChecker) {
         this.apiRateLimitChecker = apiRateLimitChecker;
+        save();
+    }
+
+    public synchronized boolean isPassthroughAuthenticationEnabled() {
+        return passthroughAuthenticationEnabled;
+    }
+
+    public synchronized void setPassthroughAuthenticationEnabled(boolean passthroughAuthenticationEnabled) {
+        this.passthroughAuthenticationEnabled = passthroughAuthenticationEnabled;
+        save();
+    }
+
+    @CheckForNull
+    public synchronized String getPassthroughAuthenticationUrl() {
+        return passthroughAuthenticationUrl;
+    }
+
+    public synchronized void setPassthroughAuthenticationUrl(@CheckForNull String passthroughAuthenticationUrl) {
+        this.passthroughAuthenticationUrl = Util.fixEmpty(passthroughAuthenticationUrl);
         save();
     }
 
@@ -233,6 +259,32 @@ public class GitHubConfiguration extends GlobalConfiguration {
             items.add(mode.getDisplayName(), mode.name());
         }
         return items;
+    }
+
+    /**
+     * Validates the passthrough authentication URL.
+     *
+     * @param value the URL to validate
+     * @return form validation result
+     */
+    public FormValidation doCheckPassthroughAuthenticationUrl(@QueryParameter String value) {
+        if (Util.fixEmpty(value) == null) {
+            return FormValidation.ok();
+        }
+        
+        try {
+            URI uri = new URI(value);
+            String scheme = uri.getScheme();
+            if (!"http".equals(scheme) && !"https".equals(scheme)) {
+                return FormValidation.error("URL must use http or https protocol");
+            }
+            if (uri.getHost() == null || uri.getHost().trim().isEmpty()) {
+                return FormValidation.error("URL must specify a valid host");
+            }
+            return FormValidation.ok();
+        } catch (URISyntaxException e) {
+            return FormValidation.error("Invalid URL format: " + e.getMessage());
+        }
     }
 
     @NonNull

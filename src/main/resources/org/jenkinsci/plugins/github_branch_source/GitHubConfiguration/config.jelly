@@ -5,6 +5,19 @@
             <f:select />
         </f:entry>
     </f:section>
+    <f:section title="${%Passthrough Authentication}">
+        <f:entry title="${%Enable Passthrough Authentication}" field="passthroughAuthenticationEnabled">
+            <f:checkbox />
+        </f:entry>
+        <f:entry title="${%Passthrough Authentication URL}" field="passthroughAuthenticationUrl">
+            <f:textbox />
+        </f:entry>
+        <f:description>
+            When enabled, username/password credentials will be sent to the specified URL to obtain GitHub tokens.
+            The URL should accept POST requests with JSON containing repository information and credentials,
+            and return a JSON response with a 'token' field.
+        </f:description>
+    </f:section>
     <f:section title="${%GitHub Enterprise Servers}">
         <f:entry>
             <f:repeatableProperty field="endpoints">

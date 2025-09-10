@@ -31,6 +31,7 @@ import com.cloudbees.plugins.credentials.CredentialsMatcher;
 import com.cloudbees.plugins.credentials.CredentialsMatchers;
 import com.cloudbees.plugins.credentials.CredentialsNameProvider;
 import com.cloudbees.plugins.credentials.CredentialsProvider;
+import com.cloudbees.plugins.credentials.CredentialsScope;
 import com.cloudbees.plugins.credentials.common.StandardCredentials;
 import com.cloudbees.plugins.credentials.common.StandardListBoxModel;
 import com.cloudbees.plugins.credentials.common.StandardUsernameCredentials;
@@ -324,6 +325,97 @@ public class Connector {
             return ((GitHubAppCredentials) c).contextualize(usageContext);
         }
         return c;
+    }
+
+    /**
+     * Attempts to use passthrough authentication for username/password credentials.
+     * If passthrough authentication is enabled and the credentials are username/password,
+     * this method will send them to the configured passthrough URL and return a token-based credential.
+     *
+     * @param context the context
+     * @param apiUri the GitHub API URI
+     * @param scanCredentialsId the scan credentials ID
+     * @param repoOwner the repository owner
+     * @param repositoryUrl the repository URL
+     * @param listener the task listener for logging
+     * @return passthrough token credentials or the original credentials if passthrough is not applicable
+     */
+    @CheckForNull
+    public static StandardCredentials lookupScanCredentialsWithPassthrough(
+            @CheckForNull Item context,
+            @CheckForNull String apiUri,
+            @CheckForNull String scanCredentialsId,
+            @CheckForNull String repoOwner,
+            @NonNull String repositoryUrl,
+            @NonNull TaskListener listener) {
+        
+        // First, get the original credentials
+        StandardCredentials credentials = lookupScanCredentials(context, apiUri, scanCredentialsId, repoOwner);
+        
+        // Check if passthrough authentication is enabled and applicable
+        if (!PassthroughAuthenticationService.isEnabled() || 
+            !(credentials instanceof StandardUsernamePasswordCredentials)) {
+            return credentials;
+        }
+        
+        try {
+            StandardUsernamePasswordCredentials userPassCreds = (StandardUsernamePasswordCredentials) credentials;
+            
+            // Extract repository name from URL
+            String repositoryName = extractRepositoryName(repositoryUrl);
+            
+            // Attempt passthrough authentication
+            String token = PassthroughAuthenticationService.authenticate(
+                PassthroughAuthenticationService.getPassthroughUrl(),
+                repositoryUrl,
+                userPassCreds,
+                apiUri,
+                repoOwner,
+                repositoryName,
+                listener
+            );
+            
+            // Create and return token-based credentials
+            return new PassthroughTokenCredentials(
+                CredentialsScope.GLOBAL,
+                "passthrough-" + credentials.getId(),
+                "Passthrough token for " + credentials.getDescription(),
+                userPassCreds.getUsername(),
+                token
+            );
+            
+        } catch (Exception e) {
+            // Log the error but fall back to original credentials
+            LOGGER.log(Level.WARNING, "Passthrough authentication failed, falling back to original credentials", e);
+            listener.error("Passthrough authentication failed: " + e.getMessage() + ". Falling back to original credentials.");
+            return credentials;
+        }
+    }
+    
+    /**
+     * Extracts the repository name from a repository URL.
+     * 
+     * @param repositoryUrl the repository URL
+     * @return the repository name
+     */
+    private static String extractRepositoryName(String repositoryUrl) {
+        if (repositoryUrl == null) {
+            return "";
+        }
+        
+        // Handle various GitHub URL formats
+        String url = repositoryUrl;
+        if (url.endsWith(".git")) {
+            url = url.substring(0, url.length() - 4);
+        }
+        
+        // Extract the last part after the final slash
+        int lastSlash = url.lastIndexOf('/');
+        if (lastSlash > 0 && lastSlash < url.length() - 1) {
+            return url.substring(lastSlash + 1);
+        }
+        
+        return "";
     }
 
     /**

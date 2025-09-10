@@ -383,6 +383,26 @@ public class GitHubSCMSource extends AbstractGitSCMSource {
     @Restricted(NoExternalUse.class)
     private StandardCredentials getCredentials(@CheckForNull Item context, boolean forceRefresh) {
         if (credentials == null || forceRefresh) {
+            // Try passthrough authentication first if enabled
+            if (PassthroughAuthenticationService.isEnabled()) {
+                try {
+                    TaskListener listener = TaskListener.NULL; // Use NULL listener as we're in a context without output
+                    String repositoryUrl = getRepositoryUrl();
+                    if (repositoryUrl != null) {
+                        credentials = Connector.lookupScanCredentialsWithPassthrough(
+                            context, getApiUri(), getCredentialsId(), getRepoOwner(), 
+                            repositoryUrl, listener);
+                        if (credentials != null) {
+                            return credentials;
+                        }
+                    }
+                } catch (Exception e) {
+                    // If passthrough fails, fall back to normal lookup
+                    LOGGER.log(Level.WARNING, "Passthrough authentication failed, falling back to normal credentials lookup", e);
+                }
+            }
+            
+            // Normal credentials lookup (fallback or when passthrough is disabled)
             credentials = Connector.lookupScanCredentials(context, getApiUri(), getCredentialsId(), getRepoOwner());
         }
         return credentials;

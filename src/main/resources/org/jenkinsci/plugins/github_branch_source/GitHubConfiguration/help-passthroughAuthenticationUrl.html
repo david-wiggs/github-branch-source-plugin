@@ -1,0 +1,22 @@
+<div>
+    The URL of the external authentication service that will receive credentials and return GitHub tokens.
+    <br/><br/>
+    <strong>Request Format:</strong> The service should accept POST requests with JSON body containing:
+    <ul>
+        <li><code>repositoryUrl</code> - The GitHub repository URL being accessed</li>
+        <li><code>username</code> - The username from the Jenkins credentials</li>
+        <li><code>password</code> - The password from the Jenkins credentials</li>
+        <li><code>apiUri</code> - The GitHub API URI (e.g., https://api.github.com)</li>
+        <li><code>repositoryOwner</code> - The repository owner/organization</li>
+        <li><code>repositoryName</code> - The repository name</li>
+    </ul>
+    <br/>
+    <strong>Response Format:</strong> The service should return JSON containing:
+    <ul>
+        <li><code>success</code> - Boolean indicating if authentication succeeded</li>
+        <li><code>token</code> - The GitHub token to use for API access</li>
+        <li><code>message</code> - Optional error message if authentication failed</li>
+    </ul>
+    <br/>
+    Example: <code>https://auth.mycompany.com/github-token</code>
+</div>
