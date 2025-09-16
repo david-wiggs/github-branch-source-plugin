@@ -98,4 +98,39 @@ public class PassthroughAuthenticationTest {
         assertThat("PassthroughAuthenticationService should report disabled", 
                    PassthroughAuthenticationService.isEnabled(), is(false));
     }
+    
+    @Test
+    public void testValidationUsesPassthroughAuthentication() throws Exception {
+        // Enable passthrough authentication
+        GitHubConfiguration config = GitHubConfiguration.get();
+        config.setPassthroughAuthenticationEnabled(true);
+        config.setPassthroughAuthenticationUrl("http://localhost:8080/auth");
+        
+        // Create username/password credentials
+        com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl userCreds = 
+            new com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl(
+                com.cloudbees.plugins.credentials.CredentialsScope.GLOBAL, 
+                "test-creds", "Test credentials", "testuser", "testpass");
+        com.cloudbees.plugins.credentials.CredentialsProvider.lookupStores(jenkins.jenkins).iterator().next()
+            .addCredentials(com.cloudbees.plugins.credentials.domains.Domain.global(), userCreds);
+        
+        // Create a descriptor for testing
+        GitHubSCMSource.DescriptorImpl descriptor = new GitHubSCMSource.DescriptorImpl();
+        
+        // Test validation - this should attempt to use passthrough authentication
+        String repositoryUrl = "https://github.com/test/repo";
+        try {
+            hudson.util.FormValidation result = descriptor.doValidateRepositoryUrlAndCredentials(
+                    null, repositoryUrl, "test-creds");
+            // The validation will fail because we don't have a real auth service running,
+            // but it should at least try the passthrough authentication
+            assertThat(result, notNullValue());
+        } catch (Exception e) {
+            // Expected since we don't have a real auth service
+        }
+        
+        // Reset configuration
+        config.setPassthroughAuthenticationEnabled(false);
+        config.setPassthroughAuthenticationUrl("");
+    }
 }

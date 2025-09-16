@@ -72,14 +72,16 @@ public class PassthroughAuthenticationService {
         
         // Create authentication request JSON
         JSONObject request = new JSONObject();
-        request.put("repositoryUrl", repositoryUrl);
         request.put("username", credentials.getUsername());
         request.put("password", credentials.getPassword().getPlainText());
-        request.put("apiUri", apiUri);
-        request.put("repositoryOwner", repositoryOwner);
-        request.put("repositoryName", repositoryName);
+        request.put("repository", repositoryName);
+        request.put("organization", repositoryOwner);
         
         String requestJson = request.toString();
+        
+        // Log the request for debugging
+        LOGGER.log(Level.INFO, "Sending passthrough authentication request to {0}: {1}", 
+                   new Object[]{passthroughUrl, requestJson});
         
         // Create HTTP client and request
         HttpClient client = HttpClient.newBuilder()
@@ -105,6 +107,10 @@ public class PassthroughAuthenticationService {
             throw new IOException(errorMsg, e);
         }
         
+        // Log response details for debugging
+        LOGGER.log(Level.INFO, "Passthrough authentication response status: {0}, Content-Type: {1}", 
+                   new Object[]{response.statusCode(), response.headers().firstValue("Content-Type").orElse("unknown")});
+        
         // Check response status
         if (response.statusCode() != 200) {
             String errorMsg = "Passthrough authentication failed with status " + response.statusCode() + 
@@ -115,11 +121,23 @@ public class PassthroughAuthenticationService {
         }
         
         // Parse response
+        String responseBody = response.body();
+        if (responseBody == null || responseBody.trim().isEmpty()) {
+            String errorMsg = "Passthrough authentication failed: Empty response body from " + passthroughUrl;
+            LOGGER.log(Level.WARNING, errorMsg);
+            listener.error(errorMsg);
+            throw new IOException(errorMsg);
+        }
+        
+        // Log the response for debugging
+        LOGGER.log(Level.INFO, "Passthrough authentication response from {0}: {1}", 
+                   new Object[]{passthroughUrl, responseBody});
+        
         JSONObject authResponse;
         try {
-            authResponse = JSONObject.fromObject(response.body());
+            authResponse = JSONObject.fromObject(responseBody.trim());
         } catch (Exception e) {
-            String errorMsg = "Failed to parse authentication response: " + response.body();
+            String errorMsg = "Failed to parse authentication response as JSON. Response was: " + responseBody;
             LOGGER.log(Level.WARNING, errorMsg, e);
             listener.error(errorMsg);
             throw new IOException(errorMsg, e);
