@@ -46,6 +46,57 @@ public class PassthroughAuthenticationService {
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30);
 
     /**
+     * Obfuscates sensitive data in JSON strings for safe logging.
+     * Replaces password and token values with asterisks.
+     * 
+     * @param jsonString the JSON string to obfuscate
+     * @return the obfuscated JSON string
+     */
+    private static String obfuscateJsonForLogging(String jsonString) {
+        if (jsonString == null || jsonString.trim().isEmpty()) {
+            return jsonString;
+        }
+        
+        try {
+            JSONObject json = JSONObject.fromObject(jsonString);
+            JSONObject safeJson = new JSONObject();
+            
+            // Copy all fields, but obfuscate sensitive ones
+            for (Object keyObj : json.keySet()) {
+                String key = keyObj.toString();
+                Object value = json.get(key);
+                
+                if ("password".equalsIgnoreCase(key) || "token".equalsIgnoreCase(key)) {
+                    // Obfuscate sensitive fields
+                    if (value != null && value.toString().length() > 0) {
+                        safeJson.put(key, "***");
+                    } else {
+                        safeJson.put(key, value);
+                    }
+                } else {
+                    // Keep non-sensitive fields as-is
+                    safeJson.put(key, value);
+                }
+            }
+            
+            return safeJson.toString();
+        } catch (Exception e) {
+            // If JSON parsing fails, do basic string replacement for various formats
+            String result = jsonString;
+            
+            // Handle JSON-style patterns: "password":"value"
+            result = result.replaceAll("(\"password\"\\s*:\\s*\")([^\"]*)(\")", "$1***$3");
+            result = result.replaceAll("(\"token\"\\s*:\\s*\")([^\"]*)(\")", "$1***$3");
+            
+            // Handle other patterns: password: value, password=value, etc.
+            result = result.replaceAll("(password\\s*[:=]\\s*)([^,\\s}]+)", "$1***");
+            result = result.replaceAll("(token\\s*[:=]\\s*)([^,\\s}]+)", "$1***");
+            
+            return result;
+        }
+    }
+
+    /**
      * Performs passthrough authentication by sending credentials to the configured URL
      * and expecting a token back.
      *
@@ -79,9 +130,9 @@ public class PassthroughAuthenticationService {
         
         String requestJson = request.toString();
         
-        // Log the request for debugging
+        // Log the request for debugging (with sensitive data obfuscated)
         LOGGER.log(Level.INFO, "Sending passthrough authentication request to {0}: {1}", 
-                   new Object[]{passthroughUrl, requestJson});
+                   new Object[]{passthroughUrl, obfuscateJsonForLogging(requestJson)});
         
         // Create HTTP client and request
         HttpClient client = HttpClient.newBuilder()
@@ -113,8 +164,9 @@ public class PassthroughAuthenticationService {
         
         // Check response status
         if (response.statusCode() != 200) {
+            String responseBody = response.body();
             String errorMsg = "Passthrough authentication failed with status " + response.statusCode() + 
-                            ": " + response.body();
+                            ": " + obfuscateJsonForLogging(responseBody);
             LOGGER.log(Level.WARNING, errorMsg);
             listener.error(errorMsg);
             throw new IOException(errorMsg);
@@ -129,15 +181,15 @@ public class PassthroughAuthenticationService {
             throw new IOException(errorMsg);
         }
         
-        // Log the response for debugging
+        // Log the response for debugging (with sensitive data obfuscated)
         LOGGER.log(Level.INFO, "Passthrough authentication response from {0}: {1}", 
-                   new Object[]{passthroughUrl, responseBody});
+                   new Object[]{passthroughUrl, obfuscateJsonForLogging(responseBody)});
         
         JSONObject authResponse;
         try {
             authResponse = JSONObject.fromObject(responseBody.trim());
         } catch (Exception e) {
-            String errorMsg = "Failed to parse authentication response as JSON. Response was: " + responseBody;
+            String errorMsg = "Failed to parse authentication response as JSON. Response was: " + obfuscateJsonForLogging(responseBody);
             LOGGER.log(Level.WARNING, errorMsg, e);
             listener.error(errorMsg);
             throw new IOException(errorMsg, e);
