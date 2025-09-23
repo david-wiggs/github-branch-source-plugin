@@ -396,13 +396,17 @@ public class GitHubSCMSource extends AbstractGitSCMSource {
                             return credentials;
                         }
                     }
-                } catch (Exception e) {
-                    // If passthrough fails, fall back to normal lookup
-                    LOGGER.log(Level.WARNING, "Passthrough authentication failed, falling back to normal credentials lookup", e);
+                } catch (RuntimeException e) {
+                    // Log passthrough authentication failure and re-throw with clearer message
+                    LOGGER.log(Level.INFO, "Passthrough authentication failed for {0}: {1}", 
+                              new Object[]{getRepositoryUrl(), e.getMessage()});
+                    throw new RuntimeException("Passthrough authentication failed. Please check your credentials and permissions.", e);
                 }
+                // If passthrough is enabled but failed, do not fall back to normal credentials
+                throw new RuntimeException("Passthrough authentication is enabled but failed");
             }
             
-            // Normal credentials lookup (fallback or when passthrough is disabled)
+            // Normal credentials lookup (only when passthrough is disabled)
             credentials = Connector.lookupScanCredentials(context, getApiUri(), getCredentialsId(), getRepoOwner());
         }
         return credentials;
@@ -2158,22 +2162,56 @@ public class GitHubSCMSource extends AbstractGitSCMSource {
             // Create a task listener for passthrough authentication logging
             TaskListener listener = TaskListener.NULL;
             
-            // Try passthrough authentication first, then fall back to regular credentials lookup
-            StandardCredentials credentials =
-                    Connector.lookupScanCredentialsWithPassthrough(
-                            context, info.getApiUri(), credentialsId, info.getRepoOwner(), repositoryUrl, listener);
+            StandardCredentials credentials = null;
             boolean usedPassthroughAuth = false;
             String passthroughUrl = null;
             
-            // Check if passthrough authentication was used
-            if (credentials instanceof PassthroughTokenCredentials) {
-                usedPassthroughAuth = true;
-                passthroughUrl = PassthroughAuthenticationService.getPassthroughUrl();
-            }
-            
-            // Fall back to regular credentials if passthrough didn't work
-            if (credentials == null) {
-                credentials = Connector.lookupScanCredentials(context, info.getApiUri(), credentialsId, info.getRepoOwner());
+            try {
+                // Try passthrough authentication first (no fallback when passthrough is enabled)
+                credentials = Connector.lookupScanCredentialsWithPassthrough(
+                        context, info.getApiUri(), credentialsId, info.getRepoOwner(), repositoryUrl, listener);
+                
+                // Check if passthrough authentication was used
+                if (credentials instanceof PassthroughTokenCredentials) {
+                    usedPassthroughAuth = true;
+                    passthroughUrl = PassthroughAuthenticationService.getPassthroughUrl();
+                }
+                
+                // Only fall back to regular credentials if passthrough is not enabled
+                if (credentials == null && !PassthroughAuthenticationService.isEnabled()) {
+                    credentials = Connector.lookupScanCredentials(context, info.getApiUri(), credentialsId, info.getRepoOwner());
+                }
+            } catch (RuntimeException e) {
+                // Handle passthrough authentication failures with user-friendly message
+                if (e.getMessage() != null && e.getMessage().contains("Passthrough authentication failed")) {
+                    Throwable cause = e.getCause();
+                    String userMessage = "Authentication failed";
+                    
+                    if (cause != null && cause.getMessage() != null) {
+                        String causeMsg = cause.getMessage();
+                        // Extract user-friendly error message from the detailed error
+                        if (causeMsg.contains("User not authorized")) {
+                            userMessage = "Access denied: You are not authorized to access this repository";
+                        } else if (causeMsg.contains("status 401")) {
+                            userMessage = "Authentication failed: Invalid credentials or insufficient permissions";
+                        } else if (causeMsg.contains("status 403")) {
+                            userMessage = "Access forbidden: You do not have permission to access this repository";
+                        } else if (causeMsg.contains("status 404")) {
+                            userMessage = "Repository not found or you do not have access to it";
+                        } else if (causeMsg.contains("matching EntraID groups and GitHub teams")) {
+                            userMessage = "Access denied: Your account is not a member of the required groups or teams";
+                        } else {
+                            // Extract any user-facing message from the cause
+                            userMessage = "Authentication failed: " + causeMsg.replaceAll("Passthrough authentication failed with status \\d+: ", "");
+                        }
+                    }
+                    
+                    return FormValidation.error("Passthrough authentication is enabled. " + userMessage + 
+                                              ". Please contact your administrator if you believe this is an error.");
+                } else {
+                    // Re-throw if it's not a passthrough auth error
+                    throw e;
+                }
             }
             
             StringBuilder sb = new StringBuilder();
@@ -2335,13 +2373,14 @@ public class GitHubSCMSource extends AbstractGitSCMSource {
                     repositoryUrl = baseUrl + "/" + repoOwner;
                 }
                 
-                // Try passthrough authentication first, then fall back to regular credentials lookup
+                // Try passthrough authentication first (no fallback when passthrough is enabled)
                 StandardCredentials credentials = null;
                 if (repositoryUrl != null) {
                     credentials = Connector.lookupScanCredentialsWithPassthrough(
                             context, apiUri, credentialsId, repoOwner, repositoryUrl, listener);
                 }
-                if (credentials == null) {
+                // Only fall back to regular credentials if passthrough is not enabled
+                if (credentials == null && !PassthroughAuthenticationService.isEnabled()) {
                     credentials = Connector.lookupScanCredentials(context, apiUri, credentialsId, repoOwner);
                 }
                 GitHub github = Connector.connect(apiUri, credentials);
@@ -2401,13 +2440,14 @@ public class GitHubSCMSource extends AbstractGitSCMSource {
                     repositoryUrl = baseUrl + "/" + repoOwner;
                 }
                 
-                // Try passthrough authentication first, then fall back to regular credentials lookup
+                // Try passthrough authentication first (no fallback when passthrough is enabled)
                 StandardCredentials credentials = null;
                 if (repositoryUrl != null) {
                     credentials = Connector.lookupScanCredentialsWithPassthrough(
                             context, apiUri, credentialsId, repoOwner, repositoryUrl, listener);
                 }
-                if (credentials == null) {
+                // Only fall back to regular credentials if passthrough is not enabled
+                if (credentials == null && !PassthroughAuthenticationService.isEnabled()) {
                     credentials = Connector.lookupScanCredentials(context, apiUri, credentialsId, repoOwner);
                 }
                 GitHub github = Connector.connect(apiUri, credentials);

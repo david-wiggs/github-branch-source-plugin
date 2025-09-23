@@ -167,7 +167,7 @@ public class PassthroughAuthenticationService {
             String responseBody = response.body();
             String errorMsg = "Passthrough authentication failed with status " + response.statusCode() + 
                             ": " + obfuscateJsonForLogging(responseBody);
-            LOGGER.log(Level.WARNING, errorMsg);
+            LOGGER.log(Level.INFO, errorMsg);
             listener.error(errorMsg);
             throw new IOException(errorMsg);
         }
@@ -176,7 +176,7 @@ public class PassthroughAuthenticationService {
         String responseBody = response.body();
         if (responseBody == null || responseBody.trim().isEmpty()) {
             String errorMsg = "Passthrough authentication failed: Empty response body from " + passthroughUrl;
-            LOGGER.log(Level.WARNING, errorMsg);
+            LOGGER.log(Level.INFO, errorMsg);
             listener.error(errorMsg);
             throw new IOException(errorMsg);
         }
@@ -203,7 +203,7 @@ public class PassthroughAuthenticationService {
         if (!success || token == null || token.trim().isEmpty()) {
             String errorMsg = "Passthrough authentication failed: " + 
                             (message != null && !message.isEmpty() ? message : "No token received");
-            LOGGER.log(Level.WARNING, errorMsg);
+            LOGGER.log(Level.INFO, errorMsg);
             listener.error(errorMsg);
             throw new IOException(errorMsg);
         }

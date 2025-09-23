@@ -328,17 +328,17 @@ public class Connector {
     }
 
     /**
-     * Attempts to use passthrough authentication for username/password credentials.
-     * If passthrough authentication is enabled and the credentials are username/password,
-     * this method will send them to the configured passthrough URL and return a token-based credential.
-     *
-     * @param context the context
-     * @param apiUri the GitHub API URI
-     * @param scanCredentialsId the scan credentials ID
+     * Attempts to use passthrough authentication if enabled, otherwise falls back to regular credentials.
+     * When passthrough authentication is enabled and fails, throws an exception instead of falling back.
+     * 
+     * @param context the item context
+     * @param apiUri the GitHub API URI 
+     * @param scanCredentialsId the credentials ID to use
      * @param repoOwner the repository owner
-     * @param repositoryUrl the repository URL
+     * @param repositoryUrl the repository URL for passthrough authentication
      * @param listener the task listener for logging
      * @return passthrough token credentials or the original credentials if passthrough is not applicable
+     * @throws RuntimeException if passthrough authentication is enabled but fails
      */
     @CheckForNull
     public static StandardCredentials lookupScanCredentialsWithPassthrough(
@@ -385,10 +385,11 @@ public class Connector {
             );
             
         } catch (Exception e) {
-            // Log the error but fall back to original credentials
-            LOGGER.log(Level.WARNING, "Passthrough authentication failed, falling back to original credentials", e);
-            listener.error("Passthrough authentication failed: " + e.getMessage() + ". Falling back to original credentials.");
-            return credentials;
+            // When passthrough authentication is enabled, do not fall back to original credentials
+            // Instead, propagate the authentication failure
+            LOGGER.log(Level.INFO, "Passthrough authentication failed", e);
+            listener.error("Passthrough authentication failed: " + e.getMessage());
+            throw new RuntimeException("Passthrough authentication failed: " + e.getMessage(), e);
         }
     }
     
