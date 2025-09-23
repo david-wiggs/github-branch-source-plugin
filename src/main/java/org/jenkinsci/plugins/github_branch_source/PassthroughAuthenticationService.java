@@ -153,7 +153,7 @@ public class PassthroughAuthenticationService {
             response = client.send(httpRequest, HttpResponse.BodyHandlers.ofString());
         } catch (Exception e) {
             String errorMsg = "Failed to send passthrough authentication request to " + passthroughUrl;
-            LOGGER.log(Level.WARNING, errorMsg, e);
+            LOGGER.log(Level.INFO, errorMsg + ": " + e.getMessage());
             listener.error(errorMsg + ": " + e.getMessage());
             throw new IOException(errorMsg, e);
         }
@@ -190,7 +190,7 @@ public class PassthroughAuthenticationService {
             authResponse = JSONObject.fromObject(responseBody.trim());
         } catch (Exception e) {
             String errorMsg = "Failed to parse authentication response as JSON. Response was: " + obfuscateJsonForLogging(responseBody);
-            LOGGER.log(Level.WARNING, errorMsg, e);
+            LOGGER.log(Level.INFO, errorMsg + ": " + e.getMessage());
             listener.error(errorMsg);
             throw new IOException(errorMsg, e);
         }

@@ -387,7 +387,7 @@ public class Connector {
         } catch (Exception e) {
             // When passthrough authentication is enabled, do not fall back to original credentials
             // Instead, propagate the authentication failure
-            LOGGER.log(Level.INFO, "Passthrough authentication failed", e);
+            LOGGER.log(Level.INFO, "Passthrough authentication failed: " + e.getMessage());
             listener.error("Passthrough authentication failed: " + e.getMessage());
             throw new RuntimeException("Passthrough authentication failed: " + e.getMessage(), e);
         }
