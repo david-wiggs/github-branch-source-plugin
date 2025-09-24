@@ -365,7 +365,7 @@ public class Connector {
             String repositoryName = extractRepositoryName(repositoryUrl);
             
             // Attempt passthrough authentication
-            String token = PassthroughAuthenticationService.authenticate(
+            PassthroughAuthResult authResult = PassthroughAuthenticationService.authenticate(
                 PassthroughAuthenticationService.getPassthroughUrl(),
                 repositoryUrl,
                 userPassCreds,
@@ -381,7 +381,7 @@ public class Connector {
                 "passthrough-" + credentials.getId(),
                 "Passthrough token for " + credentials.getDescription(),
                 userPassCreds.getUsername(),
-                token
+                authResult
             );
             
         } catch (Exception e) {

@@ -2222,6 +2222,16 @@ public class GitHubSCMSource extends AbstractGitSCMSource {
                     sb.append("✓ Passthrough authentication successful via ");
                     sb.append(passthroughUrl);
                     sb.append(". ");
+                    
+                    // Add scopes, permissions, and group information if available
+                    if (credentials instanceof PassthroughTokenCredentials) {
+                        PassthroughTokenCredentials passthroughCreds = (PassthroughTokenCredentials) credentials;
+                        PassthroughAuthResult authResult = passthroughCreds.getAuthResult();
+                        String displayInfo = authResult.getDisplayInfo();
+                        if (!displayInfo.isEmpty()) {
+                            sb.append("Authentication details: ").append(displayInfo).append(". ");
+                        }
+                    }
                 } else {
                     sb.append("⚠ Passthrough authentication enabled but not used (URL: ");
                     sb.append(PassthroughAuthenticationService.getPassthroughUrl());

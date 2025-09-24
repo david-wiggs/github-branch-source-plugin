@@ -40,15 +40,17 @@ public class PassthroughTokenCredentials extends BaseStandardCredentials impleme
     
     private final String username;
     private final Secret token;
+    private final PassthroughAuthResult authResult;
     
     public PassthroughTokenCredentials(@NonNull CredentialsScope scope,
                                      @NonNull String id, 
                                      @NonNull String description,
                                      @NonNull String username, 
-                                     @NonNull String token) {
+                                     @NonNull PassthroughAuthResult authResult) {
         super(scope, id, description);
         this.username = username;
-        this.token = Secret.fromString(token);
+        this.token = Secret.fromString(authResult.getToken());
+        this.authResult = authResult;
     }
     
     @NonNull
@@ -61,6 +63,16 @@ public class PassthroughTokenCredentials extends BaseStandardCredentials impleme
     @Override
     public Secret getPassword() {
         return token;
+    }
+    
+    /**
+     * Gets the full authentication result including scopes, permissions, and group information.
+     * 
+     * @return the PassthroughAuthResult containing all authentication metadata
+     */
+    @NonNull
+    public PassthroughAuthResult getAuthResult() {
+        return authResult;
     }
     
     @NonNull

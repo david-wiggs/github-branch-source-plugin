@@ -28,12 +28,15 @@ import com.cloudbees.plugins.credentials.common.StandardUsernamePasswordCredenti
 import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.model.TaskListener;
 import net.sf.json.JSONObject;
+import net.sf.json.JSONArray;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.List;
+import java.util.ArrayList;
 import java.util.logging.Logger;
 import java.util.logging.Level;
 
@@ -107,17 +110,17 @@ public class PassthroughAuthenticationService {
      * @param repositoryOwner the repository owner
      * @param repositoryName the repository name
      * @param listener the task listener for logging
-     * @return the authentication token or null if authentication failed
+     * @return the authentication result with token, scopes, permissions, and group information
      * @throws IOException if there's an error during the request
      */
     @NonNull
-    public static String authenticate(@NonNull String passthroughUrl,
-                                    @NonNull String repositoryUrl,
-                                    @NonNull StandardUsernamePasswordCredentials credentials,
-                                    @NonNull String apiUri,
-                                    @NonNull String repositoryOwner,
-                                    @NonNull String repositoryName,
-                                    @NonNull TaskListener listener) throws IOException {
+    public static PassthroughAuthResult authenticate(@NonNull String passthroughUrl,
+                                                   @NonNull String repositoryUrl,
+                                                   @NonNull StandardUsernamePasswordCredentials credentials,
+                                                   @NonNull String apiUri,
+                                                   @NonNull String repositoryOwner,
+                                                   @NonNull String repositoryName,
+                                                   @NonNull TaskListener listener) throws IOException {
         
         LOGGER.log(Level.FINE, "Attempting passthrough authentication for repository: {0}", repositoryUrl);
         
@@ -208,10 +211,37 @@ public class PassthroughAuthenticationService {
             throw new IOException(errorMsg);
         }
         
+        // Parse additional fields from the response
+        List<String> scopes = new ArrayList<>();
+        JSONArray scopesArray = authResponse.optJSONArray("scopes");
+        if (scopesArray != null) {
+            for (int i = 0; i < scopesArray.size(); i++) {
+                scopes.add(scopesArray.optString(i));
+            }
+        }
+        
+        String permissions = authResponse.optString("permissions");
+        
+        List<String> userGroups = new ArrayList<>();
+        JSONArray userGroupsArray = authResponse.optJSONArray("userGroups");
+        if (userGroupsArray != null) {
+            for (int i = 0; i < userGroupsArray.size(); i++) {
+                userGroups.add(userGroupsArray.optString(i));
+            }
+        }
+        
+        List<String> matchingTeams = new ArrayList<>();
+        JSONArray matchingTeamsArray = authResponse.optJSONArray("matchingTeams");
+        if (matchingTeamsArray != null) {
+            for (int i = 0; i < matchingTeamsArray.size(); i++) {
+                matchingTeams.add(matchingTeamsArray.optString(i));
+            }
+        }
+        
         LOGGER.log(Level.FINE, "Passthrough authentication successful for repository: {0}", repositoryUrl);
         listener.getLogger().println("Passthrough authentication successful");
         
-        return token;
+        return new PassthroughAuthResult(token, scopes, permissions, userGroups, matchingTeams);
     }
     
     /**

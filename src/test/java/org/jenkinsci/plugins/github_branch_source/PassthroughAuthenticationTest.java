@@ -72,12 +72,21 @@ public class PassthroughAuthenticationTest {
 
     @Test
     public void testPassthroughTokenCredentials() throws Exception {
+        // Create a mock PassthroughAuthResult
+        PassthroughAuthResult authResult = new PassthroughAuthResult(
+            "test-token-123",
+            java.util.Arrays.asList("read", "write"),
+            "admin", 
+            java.util.Arrays.asList("group1", "group2"),
+            java.util.Arrays.asList("team1", "team2")
+        );
+        
         PassthroughTokenCredentials creds = new PassthroughTokenCredentials(
             com.cloudbees.plugins.credentials.CredentialsScope.GLOBAL,
             "test-id",
             "Test Passthrough Credentials",
             "testuser",
-            "test-token-123"
+            authResult
         );
         
         assertThat("Credentials ID should be set", creds.getId(), is("test-id"));
@@ -85,6 +94,7 @@ public class PassthroughAuthenticationTest {
         assertThat("Username should be set", creds.getUsername(), is("testuser"));
         assertThat("Password should contain token", creds.getPassword().getPlainText(), is("test-token-123"));
         assertThat("Should have GLOBAL scope", creds.getScope(), is(com.cloudbees.plugins.credentials.CredentialsScope.GLOBAL));
+        assertThat("Should have auth result", creds.getAuthResult(), is(authResult));
     }
 
     @Test
