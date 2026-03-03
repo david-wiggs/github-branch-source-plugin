@@ -376,13 +376,15 @@ public class Connector {
             );
             
             // Create and return token-based credentials
-            return new PassthroughTokenCredentials(
+            PassthroughTokenCredentials passthroughCredentials = new PassthroughTokenCredentials(
                 CredentialsScope.GLOBAL,
-                "passthrough-" + credentials.getId(),
+                "passthrough-" + credentials.getId() + "-" + Util.getDigestOf(authResult.getToken()).substring(0, 12),
                 "Passthrough token for " + credentials.getDescription(),
                 userPassCreds.getUsername(),
                 authResult
             );
+            PassthroughCredentialsProvider.register(passthroughCredentials);
+            return passthroughCredentials;
             
         } catch (Exception e) {
             // When passthrough authentication is enabled, do not fall back to original credentials

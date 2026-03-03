@@ -1807,7 +1807,24 @@ public class GitHubSCMSource extends AbstractGitSCMSource {
 
     @Override
     public SCM build(SCMHead head, SCMRevision revision) {
-        return new GitHubSCMBuilder(this, head, revision).withTraits(traits).build();
+        GitHubSCMBuilder builder = new GitHubSCMBuilder(this, head, revision).withTraits(traits);
+        if (PassthroughAuthenticationService.isEnabled() && !hasExplicitSshCheckoutTrait()) {
+            StandardCredentials passthroughCredentials = getCredentials(getOwner(), false);
+            if (passthroughCredentials instanceof PassthroughTokenCredentials) {
+                PassthroughCredentialsProvider.register((PassthroughTokenCredentials) passthroughCredentials);
+                builder.withCredentials(passthroughCredentials.getId()).withResolver(HTTPS);
+            }
+        }
+        return builder.build();
+    }
+
+    private boolean hasExplicitSshCheckoutTrait() {
+        for (SCMSourceTrait trait : traits) {
+            if (trait instanceof SSHCheckoutTrait) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @CheckForNull
