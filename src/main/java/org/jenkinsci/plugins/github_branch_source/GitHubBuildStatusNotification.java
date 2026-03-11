@@ -24,6 +24,7 @@
 
 package org.jenkinsci.plugins.github_branch_source;
 
+import com.cloudbees.plugins.credentials.common.StandardCredentials;
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.Extension;
@@ -181,13 +182,24 @@ public class GitHubBuildStatusNotification {
                 return null;
             }
             if (source.getScanCredentialsId() != null) {
-                return Connector.connect(
-                        source.getApiUri(),
-                        Connector.lookupScanCredentials(
-                                source.getOwner(),
-                                source.getApiUri(),
-                                source.getScanCredentialsId(),
-                                source.getRepoOwner()));
+                StandardCredentials credentials;
+                if (PassthroughAuthenticationService.isEnabled()) {
+                    String repositoryUrl = source.getRepositoryUrl();
+                    credentials = Connector.lookupScanCredentialsWithPassthrough(
+                            source.getOwner(),
+                            source.getApiUri(),
+                            source.getScanCredentialsId(),
+                            source.getRepoOwner(),
+                            repositoryUrl,
+                            TaskListener.NULL);
+                } else {
+                    credentials = Connector.lookupScanCredentials(
+                            source.getOwner(),
+                            source.getApiUri(),
+                            source.getScanCredentialsId(),
+                            source.getRepoOwner());
+                }
+                return Connector.connect(source.getApiUri(), credentials);
             }
         }
         return null;

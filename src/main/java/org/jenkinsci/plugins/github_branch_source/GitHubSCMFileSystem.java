@@ -237,8 +237,18 @@ public class GitHubSCMFileSystem extends SCMFileSystem implements GitHubClosable
                 throws IOException, InterruptedException {
             GitHubSCMSource src = (GitHubSCMSource) source;
             String apiUri = src.getApiUri();
-            StandardCredentials credentials = Connector.lookupScanCredentials(
-                    (Item) src.getOwner(), apiUri, src.getScanCredentialsId(), src.getRepoOwner());
+            StandardCredentials credentials;
+
+            // Use passthrough authentication if enabled, otherwise fall back to standard lookup
+            if (PassthroughAuthenticationService.isEnabled()) {
+                String repositoryUrl = src.getRepositoryUrl();
+                credentials = Connector.lookupScanCredentialsWithPassthrough(
+                        (Item) src.getOwner(), apiUri, src.getScanCredentialsId(),
+                        src.getRepoOwner(), repositoryUrl, hudson.model.TaskListener.NULL);
+            } else {
+                credentials = Connector.lookupScanCredentials(
+                        (Item) src.getOwner(), apiUri, src.getScanCredentialsId(), src.getRepoOwner());
+            }
 
             // Github client and validation
             GitHub github = Connector.connect(apiUri, credentials);
