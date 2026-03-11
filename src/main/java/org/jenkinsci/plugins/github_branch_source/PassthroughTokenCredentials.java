@@ -33,12 +33,16 @@ import hudson.util.Secret;
 
 /**
  * Credentials implementation that wraps a token obtained via passthrough authentication.
+ * Uses "x-access-token" as the username, which is required by GitHub for
+ * authenticating with GitHub App installation tokens over HTTPS.
  */
 public class PassthroughTokenCredentials extends BaseStandardCredentials implements StandardUsernamePasswordCredentials {
     
     private static final long serialVersionUID = 1L;
     
-    private final String username;
+    private static final String GITHUB_TOKEN_USERNAME = "x-access-token";
+    
+    private final String originalUsername;
     private final Secret token;
     private final PassthroughAuthResult authResult;
     
@@ -48,7 +52,7 @@ public class PassthroughTokenCredentials extends BaseStandardCredentials impleme
                                      @NonNull String username, 
                                      @NonNull PassthroughAuthResult authResult) {
         super(scope, id, description);
-        this.username = username;
+        this.originalUsername = username;
         this.token = Secret.fromString(authResult.getToken());
         this.authResult = authResult;
     }
@@ -56,7 +60,17 @@ public class PassthroughTokenCredentials extends BaseStandardCredentials impleme
     @NonNull
     @Override
     public String getUsername() {
-        return username;
+        return GITHUB_TOKEN_USERNAME;
+    }
+    
+    /**
+     * Gets the original username that was used to authenticate with the passthrough service.
+     *
+     * @return the original username
+     */
+    @NonNull
+    public String getOriginalUsername() {
+        return originalUsername;
     }
     
     @NonNull
@@ -89,6 +103,6 @@ public class PassthroughTokenCredentials extends BaseStandardCredentials impleme
     
     @Override
     public String toString() {
-        return "PassthroughTokenCredentials[" + getId() + "/" + getUsername() + "]";
+        return "PassthroughTokenCredentials[" + getId() + "/" + originalUsername + "]";
     }
 }
