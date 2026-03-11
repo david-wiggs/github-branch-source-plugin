@@ -1830,7 +1830,25 @@ public class GitHubSCMSource extends AbstractGitSCMSource {
                                  tokenValue.substring(0, Math.min(8, tokenValue.length())) + "...",
                                  tokenValue.length(),
                                  ptc.getAuthResult().getPermissions()});
-                builder.withCredentials(ptc.getId()).withResolver(HTTPS);
+                
+                // Embed credentials directly in the HTTPS URL to bypass credential helpers.
+                // git-client 6.2.0 does NOT disable system credential helpers when using GIT_ASKPASS,
+                // so any Codespace/dev container credential helper would provide its own token
+                // (which doesn't have access to the target repo) BEFORE GIT_ASKPASS is consulted.
+                // By embedding x-access-token:TOKEN@ in the URL, git uses those credentials directly.
+                final String passthroughToken = tokenValue;
+                RepositoryUriResolver passthroughResolver = new RepositoryUriResolver() {
+                    @Override
+                    public String getRepositoryUri(String apiUri, String owner, String repository) {
+                        String host = hostnameFromApiUri(apiUri);
+                        String scheme = (apiUri == null || apiUri.startsWith("https://")) ? "https" : "http";
+                        return scheme + "://x-access-token:" + passthroughToken + "@" + host + "/" + owner + "/" + repository + ".git";
+                    }
+                };
+                // Set credential ID for log masking and API operations,
+                // and use the credential-embedding resolver for git checkout
+                builder.withCredentials(ptc.getId()).withResolver(passthroughResolver);
+                LOGGER.log(Level.INFO, "Passthrough: using credential-embedded URL resolver to bypass credential helpers");
             } else {
                 LOGGER.log(Level.WARNING, "Passthrough credential is not PassthroughTokenCredentials: {0}",
                     passthroughCredentials != null ? passthroughCredentials.getClass().getName() : "null");
