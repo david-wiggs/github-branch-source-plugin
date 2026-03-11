@@ -1809,10 +1809,31 @@ public class GitHubSCMSource extends AbstractGitSCMSource {
     public SCM build(SCMHead head, SCMRevision revision) {
         GitHubSCMBuilder builder = new GitHubSCMBuilder(this, head, revision).withTraits(traits);
         if (PassthroughAuthenticationService.isEnabled() && !hasExplicitSshCheckoutTrait()) {
-            StandardCredentials passthroughCredentials = getCredentials(getOwner(), false);
+            // Force refresh to generate a fresh installation token for git checkout
+            // The cached token from scanning may not work for git CLI operations
+            StandardCredentials passthroughCredentials = getCredentials(getOwner(), true);
             if (passthroughCredentials instanceof PassthroughTokenCredentials) {
-                PassthroughCredentialsProvider.register((PassthroughTokenCredentials) passthroughCredentials);
-                builder.withCredentials(passthroughCredentials.getId()).withResolver(HTTPS);
+                PassthroughTokenCredentials ptc = (PassthroughTokenCredentials) passthroughCredentials;
+                
+                // Validate the token looks like a real GitHub installation token
+                String tokenValue = ptc.getPassword().getPlainText();
+                if (tokenValue.contains("mock_token") || tokenValue.contains("development")) {
+                    LOGGER.log(Level.SEVERE, "Passthrough token appears to be a MOCK token! "
+                        + "The passthrough service may be running in development mode. "
+                        + "Set NODE_ENV=production and configure APP_ID/PRIVATE_KEY_PATH.");
+                }
+                
+                PassthroughCredentialsProvider.register(ptc);
+                LOGGER.log(Level.INFO, "Passthrough checkout credential: id={0}, username={1}, "
+                    + "tokenPrefix={2}, tokenLength={3}, permissions={4}",
+                    new Object[]{ptc.getId(), ptc.getUsername(), 
+                                 tokenValue.substring(0, Math.min(8, tokenValue.length())) + "...",
+                                 tokenValue.length(),
+                                 ptc.getAuthResult().getPermissions()});
+                builder.withCredentials(ptc.getId()).withResolver(HTTPS);
+            } else {
+                LOGGER.log(Level.WARNING, "Passthrough credential is not PassthroughTokenCredentials: {0}",
+                    passthroughCredentials != null ? passthroughCredentials.getClass().getName() : "null");
             }
         }
         return builder.build();

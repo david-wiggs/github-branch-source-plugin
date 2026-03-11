@@ -383,6 +383,10 @@ public class Connector {
                 userPassCreds.getUsername(),
                 authResult
             );
+            LOGGER.log(Level.INFO, "Created passthrough credential: id={0}, username={1}, tokenPrefix={2}, tokenLength={3}",
+                new Object[]{passthroughCredentials.getId(), passthroughCredentials.getUsername(),
+                             authResult.getToken().substring(0, Math.min(8, authResult.getToken().length())) + "...",
+                             authResult.getToken().length()});
             PassthroughCredentialsProvider.register(passthroughCredentials);
             return passthroughCredentials;
             

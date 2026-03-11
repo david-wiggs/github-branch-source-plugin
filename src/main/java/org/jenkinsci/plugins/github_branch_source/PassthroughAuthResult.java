@@ -25,14 +25,19 @@
 package org.jenkinsci.plugins.github_branch_source;
 
 import edu.umd.cs.findbugs.annotations.NonNull;
+import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Collections;
 
 /**
  * Represents the result of a passthrough authentication request.
  * Contains the token and additional metadata like scopes, permissions, and group information.
+ * Implements Serializable to support Jenkins remoting (master-to-agent credential transfer).
  */
-public class PassthroughAuthResult {
+public class PassthroughAuthResult implements Serializable {
+    
+    private static final long serialVersionUID = 1L;
     
     private final String token;
     private final List<String> scopes;
@@ -46,10 +51,10 @@ public class PassthroughAuthResult {
                                 List<String> userGroups,
                                 List<String> matchingTeams) {
         this.token = token;
-        this.scopes = scopes != null ? Collections.unmodifiableList(scopes) : Collections.emptyList();
+        this.scopes = scopes != null ? Collections.unmodifiableList(new ArrayList<>(scopes)) : Collections.emptyList();
         this.permissions = permissions;
-        this.userGroups = userGroups != null ? Collections.unmodifiableList(userGroups) : Collections.emptyList();
-        this.matchingTeams = matchingTeams != null ? Collections.unmodifiableList(matchingTeams) : Collections.emptyList();
+        this.userGroups = userGroups != null ? Collections.unmodifiableList(new ArrayList<>(userGroups)) : Collections.emptyList();
+        this.matchingTeams = matchingTeams != null ? Collections.unmodifiableList(new ArrayList<>(matchingTeams)) : Collections.emptyList();
     }
     
     @NonNull
