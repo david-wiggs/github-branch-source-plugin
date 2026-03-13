@@ -28,7 +28,7 @@ class FillErrorResponse extends IOException implements HttpResponse {
                         + req.getContextPath()
                         + Jenkins.RESOURCE_PATH
                         + "/images/none.gif' height=16 width=1>"
-                        + Util.escape(getMessage())
+                        + Util.escape("An error occurred while processing the request.")
                         + "</div>");
     }
 }
