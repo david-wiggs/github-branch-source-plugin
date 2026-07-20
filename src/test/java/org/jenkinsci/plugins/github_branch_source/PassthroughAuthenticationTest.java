@@ -91,7 +91,8 @@ public class PassthroughAuthenticationTest {
         
         assertThat("Credentials ID should be set", creds.getId(), is("test-id"));
         assertThat("Credentials description should be set", creds.getDescription(), is("Test Passthrough Credentials"));
-        assertThat("Username should be set", creds.getUsername(), is("testuser"));
+        assertThat("Username should be the GitHub App token username", creds.getUsername(), is("x-access-token"));
+        assertThat("Original username should be preserved", creds.getOriginalUsername(), is("testuser"));
         assertThat("Password should contain token", creds.getPassword().getPlainText(), is("test-token-123"));
         assertThat("Should have GLOBAL scope", creds.getScope(), is(com.cloudbees.plugins.credentials.CredentialsScope.GLOBAL));
         assertThat("Should have auth result", creds.getAuthResult(), is(authResult));

@@ -382,7 +382,7 @@ public class GitHubSCMSource extends AbstractGitSCMSource {
     @CheckForNull
     @Restricted(NoExternalUse.class)
     private StandardCredentials getCredentials(@CheckForNull Item context, boolean forceRefresh) {
-        if (credentials == null || forceRefresh) {
+        if (credentials == null || forceRefresh || isCachedPassthroughCredentialStale()) {
             // Try passthrough authentication first if enabled
             if (PassthroughAuthenticationService.isEnabled()) {
                 try {
@@ -410,6 +410,21 @@ public class GitHubSCMSource extends AbstractGitSCMSource {
             credentials = Connector.lookupScanCredentials(context, getApiUri(), getCredentialsId(), getRepoOwner());
         }
         return credentials;
+    }
+
+    /**
+     * Whether the currently cached credential is a passthrough token that has gone stale and must
+     * be re-acquired. Passthrough tokens are short-lived GitHub App installation tokens (typically
+     * one hour); reusing an expired one causes a 401 "Bad credentials" failure on the next run of a
+     * long-idle pipeline. Refreshing when stale avoids that without re-authenticating on every
+     * build.
+     *
+     * @return {@code true} if the cached credential is a stale {@link PassthroughTokenCredentials}
+     */
+    private boolean isCachedPassthroughCredentialStale() {
+        StandardCredentials current = credentials;
+        return current instanceof PassthroughTokenCredentials
+                && ((PassthroughTokenCredentials) current).isStale();
     }
 
     @Restricted(NoExternalUse.class)

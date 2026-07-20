@@ -26,6 +26,7 @@ package org.jenkinsci.plugins.github_branch_source;
 
 import edu.umd.cs.findbugs.annotations.NonNull;
 import java.io.Serializable;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Collections;
@@ -38,23 +39,56 @@ import java.util.Collections;
 public class PassthroughAuthResult implements Serializable {
     
     private static final long serialVersionUID = 1L;
-    
+
+    /** Sentinel value used when the passthrough service does not report a token expiry. */
+    public static final long EXPIRY_UNKNOWN = 0L;
+
+    /**
+     * Refresh the token this many milliseconds before its reported expiry, so it is replaced
+     * before GitHub starts rejecting it with "Bad credentials". Non-final for testing.
+     */
+    static long REFRESH_MARGIN_MILLIS = Long.getLong(
+            PassthroughAuthResult.class.getName() + ".REFRESH_MARGIN_MILLIS",
+            Duration.ofMinutes(5).toMillis());
+
+    /**
+     * When the passthrough service does not report an expiry, treat the token as stale this many
+     * milliseconds after it was acquired. GitHub App installation tokens live one hour, so this
+     * stays comfortably below that. Non-final for testing.
+     */
+    static long FALLBACK_LIFETIME_MILLIS = Long.getLong(
+            PassthroughAuthResult.class.getName() + ".FALLBACK_LIFETIME_MILLIS",
+            Duration.ofMinutes(45).toMillis());
+
     private final String token;
     private final List<String> scopes;
     private final String permissions;
     private final List<String> userGroups;
     private final List<String> matchingTeams;
-    
-    public PassthroughAuthResult(@NonNull String token, 
+    private final long acquiredAtEpochMilli;
+    private final long expiresAtEpochMilli;
+
+    public PassthroughAuthResult(@NonNull String token,
                                 List<String> scopes,
                                 String permissions,
                                 List<String> userGroups,
                                 List<String> matchingTeams) {
+        this(token, scopes, permissions, userGroups, matchingTeams, EXPIRY_UNKNOWN);
+    }
+
+    public PassthroughAuthResult(@NonNull String token,
+                                List<String> scopes,
+                                String permissions,
+                                List<String> userGroups,
+                                List<String> matchingTeams,
+                                long expiresAtEpochMilli) {
         this.token = token;
         this.scopes = scopes != null ? Collections.unmodifiableList(new ArrayList<>(scopes)) : Collections.emptyList();
         this.permissions = permissions;
         this.userGroups = userGroups != null ? Collections.unmodifiableList(new ArrayList<>(userGroups)) : Collections.emptyList();
         this.matchingTeams = matchingTeams != null ? Collections.unmodifiableList(new ArrayList<>(matchingTeams)) : Collections.emptyList();
+        this.expiresAtEpochMilli = expiresAtEpochMilli;
+        this.acquiredAtEpochMilli = System.currentTimeMillis();
     }
     
     @NonNull
@@ -79,6 +113,35 @@ public class PassthroughAuthResult implements Serializable {
     @NonNull
     public List<String> getMatchingTeams() {
         return matchingTeams;
+    }
+
+    /**
+     * The instant, in epoch milliseconds, at which the underlying token expires, or
+     * {@link #EXPIRY_UNKNOWN} if the passthrough service did not report an expiry.
+     *
+     * @return the token expiry in epoch milliseconds, or {@link #EXPIRY_UNKNOWN}
+     */
+    public long getExpiresAtEpochMilli() {
+        return expiresAtEpochMilli;
+    }
+
+    /**
+     * Whether the cached token should be refreshed before it is used again.
+     *
+     * <p>When the passthrough service reported an expiry, the token is considered stale once it is
+     * within {@link #REFRESH_MARGIN_MILLIS} of that expiry. Otherwise it is considered stale once
+     * {@link #FALLBACK_LIFETIME_MILLIS} has elapsed since it was acquired. This prevents long-idle
+     * pipelines from reusing an expired GitHub App installation token and failing with a 401 "Bad
+     * credentials" error.
+     *
+     * @return {@code true} if the token should be re-acquired, otherwise {@code false}
+     */
+    public boolean isStale() {
+        long now = System.currentTimeMillis();
+        if (expiresAtEpochMilli > EXPIRY_UNKNOWN) {
+            return now >= expiresAtEpochMilli - REFRESH_MARGIN_MILLIS;
+        }
+        return now >= acquiredAtEpochMilli + FALLBACK_LIFETIME_MILLIS;
     }
     
     /**

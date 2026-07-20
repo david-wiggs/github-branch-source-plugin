@@ -88,6 +88,16 @@ public class PassthroughTokenCredentials extends BaseStandardCredentials impleme
     public PassthroughAuthResult getAuthResult() {
         return authResult;
     }
+
+    /**
+     * Whether the wrapped token should be refreshed before it is used again.
+     *
+     * @return {@code true} if the token is stale and a new one should be obtained
+     * @see PassthroughAuthResult#isStale()
+     */
+    public boolean isStale() {
+        return authResult.isStale();
+    }
     
     @NonNull
     @Override
