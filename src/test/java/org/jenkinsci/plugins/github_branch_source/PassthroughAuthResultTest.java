@@ -25,6 +25,7 @@
 package org.jenkinsci.plugins.github_branch_source;
 
 import org.junit.Test;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collections;
 
@@ -96,5 +97,60 @@ public class PassthroughAuthResultTest {
         assertThat(displayInfo, containsString("Matching Teams: [dev-team]"));
         assertThat(displayInfo, not(containsString("Permissions")));
         assertThat(displayInfo, not(containsString("User Groups")));
+    }
+
+    @Test
+    public void notStaleWhenExpiryFarInFuture() {
+        long future = System.currentTimeMillis() + Duration.ofHours(1).toMillis();
+        PassthroughAuthResult result = new PassthroughAuthResult(
+            "test-token", Collections.emptyList(), "push",
+            Collections.emptyList(), Collections.emptyList(), future);
+
+        assertThat(result.getExpiresAtEpochMilli(), is(future));
+        assertThat(result.isStale(), is(false));
+    }
+
+    @Test
+    public void staleWhenExpiryInThePast() {
+        long past = System.currentTimeMillis() - 1000L;
+        PassthroughAuthResult result = new PassthroughAuthResult(
+            "test-token", Collections.emptyList(), "push",
+            Collections.emptyList(), Collections.emptyList(), past);
+
+        assertThat(result.isStale(), is(true));
+    }
+
+    @Test
+    public void staleWhenWithinRefreshMargin() {
+        // Expires in one minute; the default refresh margin is five minutes, so it is already stale.
+        long soon = System.currentTimeMillis() + Duration.ofMinutes(1).toMillis();
+        PassthroughAuthResult result = new PassthroughAuthResult(
+            "test-token", Collections.emptyList(), "push",
+            Collections.emptyList(), Collections.emptyList(), soon);
+
+        assertThat(result.isStale(), is(true));
+    }
+
+    @Test
+    public void fallbackLifetimeUsedWhenExpiryUnknown() {
+        long originalFallback = PassthroughAuthResult.FALLBACK_LIFETIME_MILLIS;
+        try {
+            // A fresh token with no reported expiry is not stale while within the fallback lifetime.
+            PassthroughAuthResult.FALLBACK_LIFETIME_MILLIS = Duration.ofMinutes(45).toMillis();
+            PassthroughAuthResult fresh = new PassthroughAuthResult(
+                "test-token", Collections.emptyList(), "push",
+                Collections.emptyList(), Collections.emptyList());
+            assertThat(fresh.getExpiresAtEpochMilli(), is(PassthroughAuthResult.EXPIRY_UNKNOWN));
+            assertThat(fresh.isStale(), is(false));
+
+            // With a zero fallback lifetime it is immediately considered stale.
+            PassthroughAuthResult.FALLBACK_LIFETIME_MILLIS = 0L;
+            PassthroughAuthResult stale = new PassthroughAuthResult(
+                "test-token", Collections.emptyList(), "push",
+                Collections.emptyList(), Collections.emptyList());
+            assertThat(stale.isStale(), is(true));
+        } finally {
+            PassthroughAuthResult.FALLBACK_LIFETIME_MILLIS = originalFallback;
+        }
     }
 }

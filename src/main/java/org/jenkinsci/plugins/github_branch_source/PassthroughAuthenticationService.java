@@ -35,6 +35,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.logging.Logger;
@@ -237,11 +238,34 @@ public class PassthroughAuthenticationService {
                 matchingTeams.add(matchingTeamsArray.optString(i));
             }
         }
-        
+
+        long expiresAtEpochMilli = parseExpiresAt(authResponse.optString("expiresAt", null));
+
         LOGGER.log(Level.FINE, "Passthrough authentication successful for repository: {0}", repositoryUrl);
         listener.getLogger().println("Passthrough authentication successful");
-        
-        return new PassthroughAuthResult(token, scopes, permissions, userGroups, matchingTeams);
+
+        return new PassthroughAuthResult(token, scopes, permissions, userGroups, matchingTeams, expiresAtEpochMilli);
+    }
+
+    /**
+     * Parses the {@code expiresAt} field returned by the passthrough service into epoch
+     * milliseconds.
+     *
+     * @param expiresAt the ISO-8601 timestamp reported by the passthrough service, or {@code null}
+     * @return the expiry in epoch milliseconds, or {@link PassthroughAuthResult#EXPIRY_UNKNOWN} if
+     *     absent or unparseable
+     */
+    private static long parseExpiresAt(String expiresAt) {
+        if (expiresAt == null || expiresAt.trim().isEmpty()) {
+            return PassthroughAuthResult.EXPIRY_UNKNOWN;
+        }
+        try {
+            return Instant.parse(expiresAt.trim()).toEpochMilli();
+        } catch (Exception e) {
+            LOGGER.log(Level.FINE, "Could not parse passthrough token expiresAt \"{0}\": {1}",
+                    new Object[]{expiresAt, e.getMessage()});
+            return PassthroughAuthResult.EXPIRY_UNKNOWN;
+        }
     }
     
     /**
